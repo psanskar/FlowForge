@@ -12,11 +12,13 @@ describe("Dashboard Aggregator", () => {
         const risks = [
             {
                 type: "TASK_STAGNANT",
-                severity: "MEDIUM"
+                severity: "MEDIUM",
+                inactiveDays: 6
             },
             {
                 type: "TASK_OVERDUE",
-                severity: "HIGH"
+                severity: "HIGH",
+                daysOverdue: 2
             },
             {
                 type: "TASK_BLOCKED",
@@ -32,12 +34,89 @@ describe("Dashboard Aggregator", () => {
         expect(result[2].severity).toBe("MEDIUM");
     });
 
+    test("prioritizes higher impact risk within the same severity", () => {
+        const risks = [
+            {
+                type: "TASK_OVERDUE",
+                severity: "HIGH",
+                daysOverdue: 2
+            },
+            {
+                type: "TASK_OVERDUE",
+                severity: "HIGH",
+                daysOverdue: 10
+            },
+            {
+                type: "TASK_OVERDUE",
+                severity: "HIGH",
+                daysOverdue: 5
+            }
+        ];
+
+        const result = getTopRisks(risks);
+
+        expect(result.map((risk) => risk.daysOverdue))
+            .toEqual([10, 5, 2]);
+    });
+
+    test("prioritizes overdue milestone risk above upcoming milestone risk", () => {
+        const risks = [
+            {
+                type: "MILESTONE_RISK",
+                severity: "HIGH",
+                daysUntilDue: 3,
+                unfinishedTaskCount: 4
+            },
+            {
+                type: "MILESTONE_RISK",
+                severity: "HIGH",
+                daysUntilDue: -2,
+                unfinishedTaskCount: 2
+            }
+        ];
+
+        const result = getTopRisks(risks);
+
+        expect(result[0].daysUntilDue).toBe(-2);
+        expect(result[1].daysUntilDue).toBe(3);
+    });
+
+    test("uses deterministic type ordering when severity and impact are equal", () => {
+        const risks = [
+            {
+                type: "TASK_STAGNANT",
+                severity: "MEDIUM",
+                inactiveDays: 5
+            },
+            {
+                type: "TASK_OVERDUE",
+                severity: "MEDIUM",
+                daysOverdue: 5
+            },
+            {
+                type: "WORKLOAD_IMBALANCE",
+                severity: "MEDIUM",
+                activeTasks: 5
+            }
+        ];
+
+        const result = getTopRisks(risks);
+
+        expect(result.map((risk) => risk.type))
+            .toEqual([
+                "TASK_OVERDUE",
+                "TASK_STAGNANT",
+                "WORKLOAD_IMBALANCE"
+            ]);
+    });
+
     test("limits top risks to five", () => {
         const risks = Array.from(
             { length: 8 },
             (_, index) => ({
                 type: `RISK_${index}`,
-                severity: "MEDIUM"
+                severity: "MEDIUM",
+                activeTasks: index
             })
         );
 
@@ -114,15 +193,15 @@ describe("Dashboard Aggregator", () => {
         ];
 
         const users = [
-    {
-        _id: "user1",
-        name: "Rahul"
-    },
-    {
-        _id: "user2",
-        name: "Priya"
-    }
-];
+            {
+                _id: "user1",
+                name: "Rahul"
+            },
+            {
+                _id: "user2",
+                name: "Priya"
+            }
+        ];
 
         const result = getWorkload(tasks, users);
 

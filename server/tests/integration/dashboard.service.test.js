@@ -160,6 +160,60 @@ describe("Dashboard Service", () => {
             .toBe(93);
     });
 
+    test("prioritizes higher-impact risks in dashboard top risks", async () => {
+        await Task.create({
+            project: project._id,
+            title: "Slightly overdue task",
+            status: "in_progress",
+            priority: "medium",
+            dueDate: new Date(
+                "2026-09-15T12:00:00.000Z"
+            ),
+            createdBy: user._id,
+            assignee: user._id,
+            lastActivityAt: new Date(
+                "2026-09-17T12:00:00.000Z"
+            )
+        });
+
+        await Task.create({
+            project: project._id,
+            title: "Seriously overdue task",
+            status: "in_progress",
+            priority: "medium",
+            dueDate: new Date(
+                "2026-09-05T12:00:00.000Z"
+            ),
+            createdBy: user._id,
+            assignee: user._id,
+            lastActivityAt: new Date(
+                "2026-09-17T12:00:00.000Z"
+            )
+        });
+
+        const dashboard =
+            await getProjectDashboard(
+                project._id.toString(),
+                user._id.toString(),
+                new Date("2026-09-17T12:00:00.000Z")
+            );
+
+        const overdueRisks =
+            dashboard.topRisks.filter(
+                (risk) =>
+                    risk.type === "TASK_OVERDUE"
+            );
+
+        expect(overdueRisks.length)
+            .toBe(2);
+
+        expect(overdueRisks[0].daysOverdue)
+            .toBe(12);
+
+        expect(overdueRisks[1].daysOverdue)
+            .toBe(2);
+    });
+
     test("rejects a user who is not a project member", async () => {
         const otherUser =
             await User.create({

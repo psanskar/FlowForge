@@ -38,11 +38,172 @@ const getSeverityForStagnantTask = (task) => {
 };
 
 const getDaysDifference = (from, to) => {
-    const millisecondsPerDay = 1000 * 60 * 60 * 24;
+    const millisecondsPerDay =
+        1000 * 60 * 60 * 24;
 
     return Math.floor(
         (to.getTime() - from.getTime()) /
         millisecondsPerDay
+    );
+};
+
+/*
+ * Adds a stable identifier to a generated risk.
+ *
+ * The identifier represents the underlying risk rather
+ * than the current ordering of the risk array.
+ */
+const addRiskIdentity = (risk) => {
+    let entityId = null;
+
+    if (risk.taskId) {
+        entityId = risk.taskId;
+    } else if (risk.milestoneId) {
+        entityId = risk.milestoneId;
+    } else if (risk.userId) {
+        entityId = risk.userId;
+    } else if (risk.githubPrId) {
+        entityId = risk.githubPrId;
+    }
+
+    if (entityId !== null && entityId !== undefined) {
+        entityId = entityId.toString();
+    }
+
+    const id = entityId
+        ? `${risk.type}:${entityId}`
+        : risk.type;
+
+    return {
+        ...risk,
+        id
+    };
+};
+
+const addRiskEvidence = (risk) => {
+    if (risk.evidence) {
+        return risk;
+    }
+
+    const evidence = [];
+
+    switch (risk.type) {
+        case "TASK_OVERDUE":
+            evidence.push(
+                `Task is ${risk.daysOverdue} day${
+                    risk.daysOverdue === 1
+                        ? ""
+                        : "s"
+                } overdue`
+            );
+            break;
+
+        case "TASK_STAGNANT":
+            evidence.push(
+                `No activity detected for ${risk.inactiveDays} days`
+            );
+            break;
+
+        case "TASK_BLOCKED":
+            evidence.push(
+                "Task status is currently blocked"
+            );
+            break;
+
+        case "DEPENDENCY_BOTTLENECK":
+            evidence.push(
+                `Task is blocking ${risk.downstreamCount} unfinished tasks`
+            );
+            break;
+
+        case "MILESTONE_RISK": {
+            const unfinishedTaskLabel =
+                risk.unfinishedTaskCount === 1
+                    ? "task"
+                    : "tasks";
+
+            evidence.push(
+                `${risk.unfinishedTaskCount} unfinished ${unfinishedTaskLabel} ${
+                    risk.unfinishedTaskCount === 1
+                        ? "remains"
+                        : "remain"
+                } before the milestone deadline`
+            );
+
+            const days =
+                Math.abs(risk.daysUntilDue);
+
+            const dayLabel =
+                days === 1 ? "day" : "days";
+
+            evidence.push(
+                `Milestone deadline is ${
+                    risk.daysUntilDue < 0
+                        ? `${days} ${dayLabel} overdue`
+                        : `within ${days} ${dayLabel}`
+                }`
+            );
+
+            break;
+        }
+
+        case "WORKLOAD_IMBALANCE":
+            evidence.push(
+                `Contributor has ${risk.activeTasks} active tasks`
+            );
+
+            evidence.push(
+                `Median contributor workload is ${risk.medianWorkload}`
+            );
+            break;
+
+        case "GITHUB_AGING_PR":
+            evidence.push(
+                `Pull request has been open for ${risk.ageDays} days`
+            );
+
+            evidence.push(
+                "Open pull request exceeded the configured aging threshold"
+            );
+            break;
+
+        case "GITHUB_ISSUE_BACKLOG":
+            evidence.push(
+                `${risk.openedCount} issues were opened in the analysis window`
+            );
+
+            evidence.push(
+                `${risk.closedCount} issues were closed in the analysis window`
+            );
+
+            evidence.push(
+                `Net issue backlog growth is ${risk.backlogGrowth}`
+            );
+            break;
+
+        case "GITHUB_LOW_MERGE_THROUGHPUT":
+            evidence.push(
+                `${risk.openedCount} pull requests were opened in the analysis window`
+            );
+
+            evidence.push(
+                "No pull requests were merged in the analysis window"
+            );
+            break;
+
+        default:
+            break;
+    }
+
+    return {
+        ...risk,
+        evidence
+    };
+};
+
+const normalizeRisk = (risk) => {
+    return addRiskEvidence(
+        addRiskIdentity(risk)
     );
 };
 
@@ -146,9 +307,13 @@ const analyzeDependencyBottlenecks = (
     const unfinishedTaskIds = new Set(
         tasks
             .filter((task) =>
-                UNFINISHED_STATUSES.includes(task.status)
+                UNFINISHED_STATUSES.includes(
+                    task.status
+                )
             )
-            .map((task) => task._id.toString())
+            .map((task) =>
+                task._id.toString()
+            )
     );
 
     const downstreamCounts = new Map();
@@ -176,9 +341,15 @@ const analyzeDependencyBottlenecks = (
         );
     }
 
-    for (const [taskId, downstreamCount] of downstreamCounts) {
+    for (
+        const [
+            taskId,
+            downstreamCount
+        ] of downstreamCounts
+    ) {
         if (
-            downstreamCount < BOTTLENECK_THRESHOLD
+            downstreamCount <
+            BOTTLENECK_THRESHOLD
         ) {
             continue;
         }
@@ -214,24 +385,32 @@ const analyzeMilestoneRisks = (
             milestone.dueDate
         );
 
-        const daysUntilDue = getDaysDifference(
-            now,
-            dueDate
-        );
+        const daysUntilDue =
+            getDaysDifference(
+                now,
+                dueDate
+            );
 
-        if (daysUntilDue > MILESTONE_WARNING_DAYS) {
+        if (
+            daysUntilDue >
+            MILESTONE_WARNING_DAYS
+        ) {
             continue;
         }
 
-        const unfinishedTasks = tasks.filter(
-            (task) =>
-                task.milestone &&
-                task.milestone.toString() ===
-                    milestone._id.toString() &&
-                task.status !== "completed"
-        );
+        const unfinishedTasks =
+            tasks.filter(
+                (task) =>
+                    task.milestone &&
+                    task.milestone.toString() ===
+                        milestone._id.toString() &&
+                    task.status !==
+                        "completed"
+            );
 
-        if (unfinishedTasks.length === 0) {
+        if (
+            unfinishedTasks.length === 0
+        ) {
             continue;
         }
 
@@ -258,12 +437,16 @@ const analyzeMilestoneRisks = (
     return risks;
 };
 
-const analyzeWorkloadImbalance = (tasks) => {
+const analyzeWorkloadImbalance = (
+    tasks
+) => {
     const workload = new Map();
 
     for (const task of tasks) {
         if (
-            !ACTIVE_STATUSES.includes(task.status) ||
+            !ACTIVE_STATUSES.includes(
+                task.status
+            ) ||
             !task.assignee
         ) {
             continue;
@@ -286,24 +469,34 @@ const analyzeWorkloadImbalance = (tasks) => {
         workload.values()
     );
 
-    const sortedWorkloads = [...workloads].sort(
-        (a, b) => a - b
-    );
+    const sortedWorkloads =
+        [...workloads].sort(
+            (a, b) => a - b
+        );
 
     const middle =
-        Math.floor(sortedWorkloads.length / 2);
+        Math.floor(
+            sortedWorkloads.length / 2
+        );
 
     const median =
         sortedWorkloads.length % 2 === 0
             ? (
-                sortedWorkloads[middle - 1] +
+                sortedWorkloads[
+                    middle - 1
+                ] +
                 sortedWorkloads[middle]
             ) / 2
             : sortedWorkloads[middle];
 
     const risks = [];
 
-    for (const [userId, activeTasks] of workload) {
+    for (
+        const [
+            userId,
+            activeTasks
+        ] of workload
+    ) {
         if (
             activeTasks < 3 ||
             activeTasks < 2 * median
@@ -338,15 +531,20 @@ const analyzeProject = ({
         );
     }
 
-    return [
-        ...analyzeOverdueTasks(tasks, now),
+    const risks = [
+        ...analyzeOverdueTasks(
+            tasks,
+            now
+        ),
 
         ...analyzeStagnantTasks(
             tasks,
             now
         ),
 
-        ...analyzeBlockedTasks(tasks),
+        ...analyzeBlockedTasks(
+            tasks
+        ),
 
         ...analyzeDependencyBottlenecks(
             tasks,
@@ -359,13 +557,17 @@ const analyzeProject = ({
             now
         ),
 
-        ...analyzeWorkloadImbalance(tasks),
+        ...analyzeWorkloadImbalance(
+            tasks
+        ),
 
         ...analyzeGithubProject({
             githubSignals,
             now
         })
     ];
+
+    return risks.map(normalizeRisk);
 };
 
 module.exports = {
