@@ -1,0 +1,119 @@
+const mongoose = require("mongoose");
+
+const validateCreateMilestone = (req, res, next) => {
+    const { name, dueDate } = req.body;
+
+    if (!name || !name.trim()) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "MISSING_MILESTONE_NAME",
+                message: "Milestone name is required"
+            }
+        });
+    }
+
+    if (!dueDate) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "MISSING_MILESTONE_DUE_DATE",
+                message: "Milestone due date is required"
+            }
+        });
+    }
+
+    if (Number.isNaN(Date.parse(dueDate))) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "INVALID_MILESTONE_DUE_DATE",
+                message: "Milestone due date must be a valid date"
+            }
+        });
+    }
+
+    next();
+};
+
+const validateUpdateMilestone = (req, res, next) => {
+    const { name, dueDate, status } = req.body;
+
+    if (
+        name === undefined &&
+        dueDate === undefined &&
+        status === undefined &&
+        req.body.description === undefined
+    ) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "NO_UPDATE_FIELDS",
+                message: "At least one field is required"
+            }
+        });
+    }
+
+    if (name !== undefined && (!name || !name.trim())) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "INVALID_MILESTONE_NAME",
+                message: "Milestone name cannot be empty"
+            }
+        });
+    }
+
+    if (
+        dueDate !== undefined &&
+        Number.isNaN(Date.parse(dueDate))
+    ) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "INVALID_MILESTONE_DUE_DATE",
+                message: "Milestone due date must be a valid date"
+            }
+        });
+    }
+
+    if (
+        status !== undefined &&
+        !["planned", "completed"].includes(status)
+    ) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "INVALID_MILESTONE_STATUS",
+                message: "Milestone status must be planned or completed"
+            }
+        });
+    }
+
+    next();
+};
+
+const validateMilestoneListQuery = (req, res, next) => {
+    const { status } = req.query;
+
+    if (
+        status !== undefined &&
+        !["planned", "completed"].includes(status)
+    ) {
+        return res.status(400).json({
+            success: false,
+            error: {
+                code: "INVALID_MILESTONE_STATUS",
+                message: "Status must be planned or completed"
+            }
+        });
+    }
+
+    next();
+};
+
+module.exports = {
+    validateCreateMilestone,
+    validateUpdateMilestone,
+    validateMilestoneListQuery
+};
