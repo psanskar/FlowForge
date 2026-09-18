@@ -167,7 +167,7 @@ describe(
                 const signals =
                     await GithubSignal.find({
                         externalId:
-                            "issue:98765"
+                            "issue:98765:opened"
                     });
 
                 expect(
@@ -288,7 +288,7 @@ describe(
                 const signals =
                     await GithubSignal.find({
                         externalId:
-                            "issue:55555"
+                            "issue:55555:opened"
                     });
 
                 expect(

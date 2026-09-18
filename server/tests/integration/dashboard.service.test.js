@@ -12,6 +12,10 @@ const Task = require(
     "../../src/modules/tasks/task.model"
 );
 
+const GithubSignal = require(
+    "../../src/modules/github/github.signal.model"
+);
+
 const {
     getProjectDashboard
 } = require(
@@ -104,6 +108,56 @@ describe("Dashboard Service", () => {
                     activeTasks: 1
                 }
             ]);
+    });
+
+    test("includes GitHub execution risks and health impact in dashboard", async () => {
+        await GithubSignal.create({
+            project: project._id,
+            repository: "68b0a7e2c9f4a1d3e5f60718",
+            type: "PULL_REQUEST_OPENED",
+            externalId: "pr:501:opened",
+            occurredAt: new Date(
+                "2026-09-08T12:00:00.000Z"
+            ),
+            actor: {
+                id: 456,
+                login: "github-developer"
+            },
+            metadata: {
+                githubId: 501,
+                number: 501,
+                title: "Long running dashboard feature"
+            }
+        });
+
+        const dashboard =
+            await getProjectDashboard(
+                project._id.toString(),
+                user._id.toString(),
+                new Date("2026-09-17T12:00:00.000Z")
+            );
+
+        const githubRisk =
+            dashboard.topRisks.find(
+                (risk) =>
+                    risk.type === "GITHUB_AGING_PR"
+            );
+
+        expect(githubRisk)
+            .toBeDefined();
+
+        expect(githubRisk)
+            .toMatchObject({
+                type: "GITHUB_AGING_PR",
+                severity: "MEDIUM",
+                githubPrId: "501",
+                prNumber: 501,
+                title: "Long running dashboard feature",
+                ageDays: 9
+            });
+
+        expect(dashboard.health.score)
+            .toBe(93);
     });
 
     test("rejects a user who is not a project member", async () => {

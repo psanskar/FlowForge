@@ -160,7 +160,7 @@ describe(
 
                 expect(
                     result.signals[0].externalId
-                ).toBe("pr:500");
+                ).toBe("pr:500:opened");
             }
         );
 

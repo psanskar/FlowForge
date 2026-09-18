@@ -145,7 +145,7 @@ describe("GitHub webhook API", () => {
         const signal =
             await GithubSignal.findOne({
                 externalId:
-                    "issue:98765"
+                    "issue:98765:opened"
             });
 
         expect(signal).not.toBeNull();

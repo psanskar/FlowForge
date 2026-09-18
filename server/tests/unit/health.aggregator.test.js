@@ -422,4 +422,42 @@ describe("Health Aggregator", () => {
         expect(atRisk.score).toBe(40);
         expect(atRisk.health).toBe("CRITICAL");
     });
+
+    describe("GitHub risks", () => {
+        test("applies MEDIUM deduction for a GitHub risk", () => {
+            const result = aggregateProjectHealth({
+                tasks: [],
+                risks: [
+                    {
+                        type: "GITHUB_AGING_PR",
+                        severity: "MEDIUM",
+                        githubPrId: "401"
+                    }
+                ],
+                now: NOW
+            });
+
+            expect(result.score).toBe(93);
+            expect(result.health).toBe("HEALTHY");
+            expect(result.risks).toHaveLength(1);
+        });
+
+        test("applies HIGH deduction for a GitHub risk", () => {
+            const result = aggregateProjectHealth({
+                tasks: [],
+                risks: [
+                    {
+                        type: "GITHUB_AGING_PR",
+                        severity: "HIGH",
+                        githubPrId: "402"
+                    }
+                ],
+                now: NOW
+            });
+
+            expect(result.score).toBe(85);
+            expect(result.health).toBe("ON_TRACK");
+            expect(result.risks).toHaveLength(1);
+        });
+    });
 });

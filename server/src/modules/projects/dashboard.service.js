@@ -25,7 +25,8 @@ const getProjectDashboard = async (
         project,
         tasks,
         dependencies,
-        milestones
+        milestones,
+        githubSignals
     } = await loadProjectRiskData(
         projectId,
         userId
@@ -36,6 +37,7 @@ const getProjectDashboard = async (
         tasks,
         dependencies,
         milestones,
+        githubSignals,
         now
     });
 
@@ -49,7 +51,9 @@ const getProjectDashboard = async (
         ...new Set(
             tasks
                 .filter((task) => task.assignee)
-                .map((task) => task.assignee.toString())
+                .map((task) =>
+                    task.assignee.toString()
+                )
         )
     ];
 

@@ -2,6 +2,10 @@ const STAGNANT_DAYS = 5;
 const MILESTONE_WARNING_DAYS = 7;
 const BOTTLENECK_THRESHOLD = 3;
 
+const {
+    analyzeGithubProject
+} = require("./github.risk.engine");
+
 const UNFINISHED_STATUSES = [
     "todo",
     "in_progress",
@@ -325,6 +329,7 @@ const analyzeProject = ({
     tasks = [],
     dependencies = [],
     milestones = [],
+    githubSignals = [],
     now = new Date()
 }) => {
     if (!project) {
@@ -335,18 +340,31 @@ const analyzeProject = ({
 
     return [
         ...analyzeOverdueTasks(tasks, now),
-        ...analyzeStagnantTasks(tasks, now),
+
+        ...analyzeStagnantTasks(
+            tasks,
+            now
+        ),
+
         ...analyzeBlockedTasks(tasks),
+
         ...analyzeDependencyBottlenecks(
             tasks,
             dependencies
         ),
+
         ...analyzeMilestoneRisks(
             tasks,
             milestones,
             now
         ),
-        ...analyzeWorkloadImbalance(tasks)
+
+        ...analyzeWorkloadImbalance(tasks),
+
+        ...analyzeGithubProject({
+            githubSignals,
+            now
+        })
     ];
 };
 

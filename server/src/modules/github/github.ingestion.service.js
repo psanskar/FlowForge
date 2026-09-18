@@ -156,6 +156,7 @@ const normalizeWebhookPush = (
         metadata: {
             message:
                 commit.message || "",
+
             branch:
                 payload.ref || null
         },
@@ -177,16 +178,31 @@ const normalizeWebhookPullRequest = (
     }
 
     let type;
+    let lifecycleAction;
 
     if (action === "opened") {
-        type = "PULL_REQUEST_OPENED";
+        type =
+            "PULL_REQUEST_OPENED";
+
+        lifecycleAction =
+            "opened";
     } else if (
         action === "closed" &&
         pullRequest.merged_at
     ) {
-        type = "PULL_REQUEST_MERGED";
-    } else if (action === "closed") {
-        type = "PULL_REQUEST_CLOSED";
+        type =
+            "PULL_REQUEST_MERGED";
+
+        lifecycleAction =
+            "merged";
+    } else if (
+        action === "closed"
+    ) {
+        type =
+            "PULL_REQUEST_CLOSED";
+
+        lifecycleAction =
+            "closed";
     } else {
         return null;
     }
@@ -195,7 +211,7 @@ const normalizeWebhookPullRequest = (
         type,
 
         externalId:
-            `pr:${pullRequest.id}`,
+            `pr:${pullRequest.id}:${lifecycleAction}`,
 
         occurredAt:
             pullRequest.updated_at ||
@@ -208,12 +224,18 @@ const normalizeWebhookPullRequest = (
         ),
 
         metadata: {
+            githubId:
+                pullRequest.id,
+
             number:
                 pullRequest.number,
+
             title:
                 pullRequest.title || "",
+
             state:
                 pullRequest.state,
+
             merged:
                 Boolean(
                     pullRequest.merged_at
@@ -238,9 +260,13 @@ const normalizeWebhookIssue = (
     let type;
 
     if (action === "opened") {
-        type = "ISSUE_OPENED";
-    } else if (action === "closed") {
-        type = "ISSUE_CLOSED";
+        type =
+            "ISSUE_OPENED";
+    } else if (
+        action === "closed"
+    ) {
+        type =
+            "ISSUE_CLOSED";
     } else {
         return null;
     }
@@ -249,7 +275,7 @@ const normalizeWebhookIssue = (
         type,
 
         externalId:
-            `issue:${issue.id}`,
+            `issue:${issue.id}:${action}`,
 
         occurredAt:
             issue.updated_at ||
@@ -262,10 +288,15 @@ const normalizeWebhookIssue = (
         ),
 
         metadata: {
+            githubId:
+                issue.id,
+
             number:
                 issue.number,
+
             title:
                 issue.title || "",
+
             state:
                 issue.state
         },

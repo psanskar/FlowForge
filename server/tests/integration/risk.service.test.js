@@ -7,6 +7,7 @@ const Project = require("../../src/modules/projects/project.model");
 const Task = require("../../src/modules/tasks/task.model");
 const Dependency = require("../../src/modules/dependencies/dependency.model");
 const Milestone = require("../../src/modules/milestones/milestone.model");
+const GithubSignal = require("../../src/modules/github/github.signal.model");
 
 const riskService = require("../../src/modules/risks/risk.service");
 
@@ -21,6 +22,7 @@ describe("Risk Service", () => {
         await Task.deleteMany({});
         await Dependency.deleteMany({});
         await Milestone.deleteMany({});
+        await GithubSignal.deleteMany({});
 
         const registerResponse = await request(app)
             .post("/api/v1/auth/register")
@@ -201,6 +203,51 @@ describe("Risk Service", () => {
         expect(
             milestoneRisk.milestoneId.toString()
         ).toBe(milestone._id.toString());
+    });
+
+    test("loads GitHub signals and detects GitHub execution risks", async () => {
+        await GithubSignal.create([
+            {
+                project: projectId,
+                repository: "68b0a7e2c9f4a1d3e5f60718",
+                type: "PULL_REQUEST_OPENED",
+                externalId: "pr:401:opened",
+                occurredAt: new Date(
+                    "2026-09-08T12:00:00.000Z"
+                ),
+                actor: {
+                    id: 123,
+                    login: "developer"
+                },
+                metadata: {
+                    githubId: 401,
+                    number: 401,
+                    title: "Long running feature"
+                }
+            }
+        ]);
+
+        const risks = await riskService.getProjectRisks(
+            projectId,
+            userId,
+            new Date("2026-09-17T12:00:00.000Z")
+        );
+
+        const githubRisk = risks.find(
+            (risk) =>
+                risk.type === "GITHUB_AGING_PR"
+        );
+
+        expect(githubRisk).toBeDefined();
+
+        expect(githubRisk).toMatchObject({
+            type: "GITHUB_AGING_PR",
+            severity: "MEDIUM",
+            githubPrId: "401",
+            prNumber: 401,
+            title: "Long running feature",
+            ageDays: 9
+        });
     });
 
     test("rejects invalid project id", async () => {

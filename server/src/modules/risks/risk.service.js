@@ -4,6 +4,9 @@ const Project = require("../projects/project.model");
 const Task = require("../tasks/task.model");
 const Dependency = require("../dependencies/dependency.model");
 const Milestone = require("../milestones/milestone.model");
+const GithubSignal = require(
+    "../github/github.signal.model"
+);
 
 const { analyzeProject } = require("./risk.engine");
 
@@ -46,21 +49,44 @@ const getProjectForMember = async (
     return project;
 };
 
-const loadProjectRiskData = async (
-    projectId,
-    userId
-) => {
-    validateProjectId(projectId);
+const loadProjectRiskData = async (projectId, userId) => {
+    if (!mongoose.isValidObjectId(projectId)) {
+        throw createError(
+            400,
+            "INVALID_PROJECT_ID",
+            "Invalid project ID"
+        );
+    }
 
-    const project = await getProjectForMember(
-        projectId,
-        userId
+    const project = await Project.findById(projectId);
+
+    if (!project) {
+        throw createError(
+            404,
+            "PROJECT_NOT_FOUND",
+            "Project not found"
+        );
+    }
+
+    const isMember = project.members.some(
+        (member) =>
+            member.user.toString() ===
+            userId.toString()
     );
+
+    if (!isMember) {
+        throw createError(
+            404,
+            "PROJECT_NOT_FOUND",
+            "Project not found"
+        );
+    }
 
     const [
         tasks,
         dependencies,
-        milestones
+        milestones,
+        githubSignals
     ] = await Promise.all([
         Task.find({
             project: projectId
@@ -72,6 +98,10 @@ const loadProjectRiskData = async (
 
         Milestone.find({
             project: projectId
+        }).lean(),
+
+        GithubSignal.find({
+            project: projectId
         }).lean()
     ]);
 
@@ -79,7 +109,8 @@ const loadProjectRiskData = async (
         project,
         tasks,
         dependencies,
-        milestones
+        milestones,
+        githubSignals
     };
 };
 
@@ -92,7 +123,8 @@ const getProjectRisks = async (
         project,
         tasks,
         dependencies,
-        milestones
+        milestones,
+        githubSignals
     } = await loadProjectRiskData(
         projectId,
         userId
@@ -103,6 +135,7 @@ const getProjectRisks = async (
         tasks,
         dependencies,
         milestones,
+        githubSignals,
         now
     });
 };

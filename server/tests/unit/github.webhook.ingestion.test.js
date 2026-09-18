@@ -9,12 +9,12 @@ const {
 describe(
     "GitHub webhook normalization",
     () => {
+
         test(
             "normalizes push commits",
             () => {
                 const payload = {
-                    ref:
-                        "refs/heads/main",
+                    ref: "refs/heads/main",
 
                     repository: {
                         id: 123
@@ -74,6 +74,7 @@ describe(
             }
         );
 
+
         test(
             "normalizes pull request opened",
             () => {
@@ -123,7 +124,13 @@ describe(
 
                 expect(
                     result.externalId
-                ).toBe("pr:999");
+                ).toBe(
+                    "pr:999:opened"
+                );
+
+                expect(
+                    result.metadata.githubId
+                ).toBe(999);
 
                 expect(
                     result.metadata.number
@@ -136,6 +143,7 @@ describe(
                 );
             }
         );
+
 
         test(
             "normalizes merged pull request",
@@ -183,10 +191,21 @@ describe(
                 );
 
                 expect(
+                    result.externalId
+                ).toBe(
+                    "pr:999:merged"
+                );
+
+                expect(
+                    result.metadata.githubId
+                ).toBe(999);
+
+                expect(
                     result.metadata.merged
                 ).toBe(true);
             }
         );
+
 
         test(
             "normalizes closed pull request",
@@ -228,10 +247,21 @@ describe(
                 );
 
                 expect(
+                    result.externalId
+                ).toBe(
+                    "pr:999:closed"
+                );
+
+                expect(
+                    result.metadata.githubId
+                ).toBe(999);
+
+                expect(
                     result.metadata.merged
                 ).toBe(false);
             }
         );
+
 
         test(
             "normalizes issue opened",
@@ -277,13 +307,20 @@ describe(
 
                 expect(
                     result.externalId
-                ).toBe("issue:555");
+                ).toBe(
+                    "issue:555:opened"
+                );
+
+                expect(
+                    result.metadata.githubId
+                ).toBe(555);
 
                 expect(
                     result.metadata.number
                 ).toBe(23);
             }
         );
+
 
         test(
             "normalizes issue closed",
@@ -321,8 +358,19 @@ describe(
                 ).toBe(
                     "ISSUE_CLOSED"
                 );
+
+                expect(
+                    result.externalId
+                ).toBe(
+                    "issue:555:closed"
+                );
+
+                expect(
+                    result.metadata.githubId
+                ).toBe(555);
             }
         );
+
 
         test(
             "ignores unsupported pull request action",
@@ -343,6 +391,7 @@ describe(
             }
         );
 
+
         test(
             "ignores unsupported issue action",
             () => {
@@ -361,5 +410,91 @@ describe(
                 expect(result).toBeNull();
             }
         );
+
+
+        test(
+            "uses different external IDs for PR lifecycle events",
+            () => {
+                const openedPayload = {
+                    repository: {
+                        id: 123
+                    },
+
+                    pull_request: {
+                        id: 999,
+                        number: 17,
+
+                        title:
+                            "Add dashboard",
+
+                        state: "open",
+
+                        created_at:
+                            "2026-09-17T10:00:00Z",
+
+                        updated_at:
+                            "2026-09-17T10:00:00Z",
+
+                        merged_at: null
+                    }
+                };
+
+                const mergedPayload = {
+                    repository: {
+                        id: 123
+                    },
+
+                    pull_request: {
+                        id: 999,
+                        number: 17,
+
+                        title:
+                            "Add dashboard",
+
+                        state: "closed",
+
+                        created_at:
+                            "2026-09-17T10:00:00Z",
+
+                        updated_at:
+                            "2026-09-17T12:00:00Z",
+
+                        merged_at:
+                            "2026-09-17T12:00:00Z"
+                    }
+                };
+
+                const opened =
+                    normalizeWebhookPullRequest(
+                        openedPayload,
+                        "opened"
+                    );
+
+                const merged =
+                    normalizeWebhookPullRequest(
+                        mergedPayload,
+                        "closed"
+                    );
+
+                expect(
+                    opened.externalId
+                ).toBe(
+                    "pr:999:opened"
+                );
+
+                expect(
+                    merged.externalId
+                ).toBe(
+                    "pr:999:merged"
+                );
+
+                expect(
+                    opened.externalId
+                ).not.toBe(
+                    merged.externalId
+                );
+            }
+        );
+
     }
 );
