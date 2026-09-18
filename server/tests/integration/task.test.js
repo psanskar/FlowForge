@@ -260,4 +260,43 @@ describe("Task API", () => {
         expect(response.status).toBe(401);
         expect(response.body.success).toBe(false);
     });
+    test("paginates tasks consistently", async () => {
+        for (const title of ["Task One", "Task Two", "Task Three"]) {
+            await request(app)
+                .post(`/api/v1/projects/${projectId}/tasks`)
+                .set("Authorization", `Bearer ${token}`)
+                .send({ title });
+        }
+
+        const response = await request(app)
+            .get(`/api/v1/projects/${projectId}/tasks`)
+            .query({ page: 2, limit: 2 })
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.tasks).toHaveLength(1);
+        expect(response.body.data.pagination).toEqual({
+            page: 2,
+            limit: 2,
+            total: 3,
+            totalPages: 2,
+            hasNextPage: false,
+            hasPreviousPage: true
+        });
+    });
+
+    test("rejects invalid task pagination query", async () => {
+        const response = await request(app)
+            .get(`/api/v1/projects/${projectId}/tasks`)
+            .query({ page: 0, limit: 101 })
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.status).toBe(422);
+        expect(response.body.error.code).toBe("VALIDATION_ERROR");
+        expect(response.body.error.details).toEqual({
+            page: "Page must be an integer greater than or equal to 1",
+            limit: "Limit must be an integer between 1 and 100"
+        });
+    });
+
 });
