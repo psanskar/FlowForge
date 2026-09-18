@@ -25,8 +25,12 @@ const listMilestones = async (req, res, next) => {
             req.params.projectId,
             req.user.id,
             {
-                page: Number(req.query.page),
-                limit: Number(req.query.limit),
+                page: req.query.page !== undefined
+                    ? Number(req.query.page)
+                    : 1,
+                limit: req.query.limit !== undefined
+                    ? Number(req.query.limit)
+                    : 20,
                 status: req.query.status
             }
         );
