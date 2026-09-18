@@ -18,7 +18,6 @@ const createTask = async ({
     progress = 0,
     userId
 }) => {
-    // Verify project ID
     if (!mongoose.isValidObjectId(projectId)) {
         const error = new Error("Project not found");
         error.statusCode = 404;
@@ -26,7 +25,6 @@ const createTask = async ({
         throw error;
     }
 
-    // Verify project exists and user is a member
     const project = await Project.findOne({
         _id: projectId,
         "members.user": userId
@@ -39,7 +37,6 @@ const createTask = async ({
         throw error;
     }
 
-    // Verify assignee belongs to project
     if (assignee) {
         const isProjectMember = project.members.some(
             (member) =>
@@ -58,7 +55,6 @@ const createTask = async ({
         }
     }
 
-    // Verify milestone belongs to the same project
     if (milestone) {
         if (!mongoose.isValidObjectId(milestone)) {
             const error = new Error("Milestone not found");
@@ -84,7 +80,6 @@ const createTask = async ({
         }
     }
 
-    // Determine execution timestamps
     let normalizedProgress = progress;
     let startedAt = null;
     let completedAt = null;
@@ -106,12 +101,10 @@ const createTask = async ({
 
     if (status === "completed") {
         normalizedProgress = 100;
-
         startedAt = new Date();
         completedAt = new Date();
     }
 
-    // Create task
     const task = await Task.create({
         project: projectId,
         title: title.trim(),
@@ -182,13 +175,16 @@ const listTasks = async (
     const sortOptions = {
         dueDate: {
             dueDate: 1,
-            createdAt: -1
+            createdAt: -1,
+            _id: 1
         },
         createdAt: {
-            createdAt: -1
+            createdAt: -1,
+            _id: 1
         },
         updatedAt: {
-            updatedAt: -1
+            updatedAt: -1,
+            _id: 1
         }
     };
 
@@ -204,15 +200,16 @@ const listTasks = async (
         Task.countDocuments(filter)
     ]);
 
+    const totalPages = Math.ceil(total / limit);
+
     return {
         tasks,
         pagination: {
             page,
             limit,
             total,
-            totalPages: Math.ceil(total / limit),
-            hasNextPage:
-                page < Math.ceil(total / limit),
+            totalPages,
+            hasNextPage: page < totalPages,
             hasPreviousPage: page > 1
         }
     };
@@ -250,12 +247,7 @@ const getTaskById = async (taskId, userId) => {
     return task;
 };
 
-const updateTask = async ({
-    taskId,
-    userId,
-    version,
-    updates
-}) => {
+const updateTask = async ({ taskId, userId, version, updates }) => {
     if (!mongoose.isValidObjectId(taskId)) {
         const error = new Error("Task not found");
         error.statusCode = 404;
@@ -272,7 +264,6 @@ const updateTask = async ({
         throw error;
     }
 
-    // Verify that the authenticated user belongs to the project.
     const project = await Project.findOne({
         _id: task.project,
         "members.user": userId
@@ -285,7 +276,6 @@ const updateTask = async ({
         throw error;
     }
 
-    // Build the next task state before writing it.
     const nextState = {
         title: task.title,
         description: task.description,
@@ -316,7 +306,6 @@ const updateTask = async ({
         }
     }
 
-    // Normalize text fields.
     if (updates.title !== undefined) {
         nextState.title = updates.title.trim();
     }
@@ -325,7 +314,6 @@ const updateTask = async ({
         nextState.description = updates.description.trim();
     }
 
-    // Validate assignee belongs to the project.
     if (
         updates.assignee !== undefined &&
         updates.assignee !== null
@@ -347,7 +335,6 @@ const updateTask = async ({
         }
     }
 
-    // Validate milestone belongs to the project.
     if (
         updates.milestone !== undefined &&
         updates.milestone !== null
@@ -369,7 +356,6 @@ const updateTask = async ({
         }
     }
 
-    // Normalize due date.
     if (
         updates.dueDate !== undefined &&
         updates.dueDate !== null
@@ -377,47 +363,45 @@ const updateTask = async ({
         nextState.dueDate = new Date(updates.dueDate);
     }
 
-    // Keep status and progress consistent.
-    // Keep status and progress consistent.
-const statusWasUpdated = updates.status !== undefined;
-const progressWasUpdated = updates.progress !== undefined;
+    const statusWasUpdated = updates.status !== undefined;
+    const progressWasUpdated = updates.progress !== undefined;
 
-if (statusWasUpdated) {
-    if (nextState.status === "todo") {
-        nextState.progress = 0;
-    }
+    if (statusWasUpdated) {
+        if (nextState.status === "todo") {
+            nextState.progress = 0;
+        }
 
-    if (
-        nextState.status === "in_progress" ||
-        nextState.status === "blocked"
-    ) {
-        if (nextState.progress === 0) {
-            nextState.progress = 1;
+        if (
+            nextState.status === "in_progress" ||
+            nextState.status === "blocked"
+        ) {
+            if (nextState.progress === 0) {
+                nextState.progress = 1;
+            }
+        }
+
+        if (nextState.status === "completed") {
+            nextState.progress = 100;
+        }
+    } else if (progressWasUpdated) {
+        if (
+            nextState.status === "in_progress" ||
+            nextState.status === "blocked"
+        ) {
+            if (nextState.progress === 0) {
+                nextState.progress = 1;
+            }
+        }
+
+        if (nextState.status === "completed") {
+            nextState.progress = 100;
+        }
+
+        if (nextState.status === "todo") {
+            nextState.progress = 0;
         }
     }
 
-    if (nextState.status === "completed") {
-        nextState.progress = 100;
-    }
-} else if (progressWasUpdated) {
-    if (nextState.status === "in_progress" || nextState.status === "blocked") {
-        if (nextState.progress === 0) {
-            nextState.progress = 1;
-        }
-    }
-
-    if (nextState.status === "completed") {
-        nextState.progress = 100;
-    }
-
-    // A progress-only update cannot move a todo task
-    // away from the todo state.
-    if (nextState.status === "todo") {
-        nextState.progress = 0;
-    }
-}
-
-    // Track execution lifecycle.
     if (
         nextState.status !== "todo" &&
         !nextState.startedAt
@@ -435,7 +419,6 @@ if (statusWasUpdated) {
 
     const now = new Date();
 
-    // Atomic optimistic-concurrency update.
     const updatedTask = await Task.findOneAndUpdate(
         {
             _id: taskId,
@@ -516,7 +499,6 @@ const deleteTask = async (taskId, userId) => {
         throw error;
     }
 
-    // Prevent deletion when the task participates in dependencies.
     const dependencyExists = await Dependency.exists({
         $or: [
             { fromTask: taskId },
