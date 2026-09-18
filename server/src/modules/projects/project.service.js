@@ -89,7 +89,8 @@ const listProjects = async (userId, { page = 1, limit = 20 } = {}) => {
                 "_id name description owner members status startDate targetDate createdAt updatedAt"
             )
             .sort({
-                updatedAt: -1
+                updatedAt: -1,
+                _id: 1
             })
             .skip(skip)
             .limit(limit),
@@ -97,14 +98,16 @@ const listProjects = async (userId, { page = 1, limit = 20 } = {}) => {
         Project.countDocuments(filter)
     ]);
 
+    const totalPages = Math.ceil(total / limit);
+
     return {
         projects,
         pagination: {
             page,
             limit,
             total,
-            totalPages: Math.ceil(total / limit),
-            hasNextPage: page < Math.ceil(total / limit),
+            totalPages,
+            hasNextPage: page < totalPages,
             hasPreviousPage: page > 1
         }
     };
