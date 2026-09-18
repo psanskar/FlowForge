@@ -63,7 +63,15 @@ const createMilestone = async ({
     return milestone;
 };
 
-const listMilestones = async (projectId, userId, status) => {
+const listMilestones = async (
+    projectId,
+    userId,
+    {
+        page = 1,
+        limit = 20,
+        status
+    } = {}
+) => {
     const project = await Project.findOne({
         _id: projectId,
         "members.user": userId
@@ -84,8 +92,29 @@ const listMilestones = async (projectId, userId, status) => {
         filter.status = status;
     }
 
-    return Milestone.find(filter)
-        .sort({ dueDate: 1, createdAt: 1 });
+    const skip = (page - 1) * limit;
+
+    const [milestones, total] = await Promise.all([
+        Milestone.find(filter)
+            .sort({ dueDate: 1, createdAt: 1 })
+            .skip(skip)
+            .limit(limit),
+        Milestone.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+        milestones,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPreviousPage: page > 1
+        }
+    };
 };
 
 const getMilestone = async (milestoneId, userId) => {
