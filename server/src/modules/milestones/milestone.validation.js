@@ -94,17 +94,49 @@ const validateUpdateMilestone = (req, res, next) => {
 };
 
 const validateMilestoneListQuery = (req, res, next) => {
-    const { status } = req.query;
+    const {
+        page = "1",
+        limit = "20",
+        status
+    } = req.query;
+
+    const errors = {};
+
+    const parsedPage = Number(page);
+    const parsedLimit = Number(limit);
+
+    if (
+        !Number.isInteger(parsedPage) ||
+        parsedPage < 1
+    ) {
+        errors.page =
+            "Page must be an integer greater than or equal to 1";
+    }
+
+    if (
+        !Number.isInteger(parsedLimit) ||
+        parsedLimit < 1 ||
+        parsedLimit > 100
+    ) {
+        errors.limit =
+            "Limit must be an integer between 1 and 100";
+    }
 
     if (
         status !== undefined &&
         !["planned", "completed"].includes(status)
     ) {
-        return res.status(400).json({
+        errors.status =
+            "Status must be one of: planned, completed";
+    }
+
+    if (Object.keys(errors).length > 0) {
+        return res.status(422).json({
             success: false,
             error: {
-                code: "INVALID_MILESTONE_STATUS",
-                message: "Status must be planned or completed"
+                code: "VALIDATION_ERROR",
+                message: "Request validation failed",
+                details: errors
             }
         });
     }
