@@ -125,4 +125,43 @@ describe("Project API", () => {
         expect(pagination.hasNextPage).toBe(false);
         expect(pagination.hasPreviousPage).toBe(false);
     });
+    test("paginates projects consistently", async () => {
+        for (const name of ["Project One", "Project Two", "Project Three"]) {
+            await request(app)
+                .post("/api/v1/projects")
+                .set("Authorization", `Bearer ${token}`)
+                .send({ name });
+        }
+
+        const response = await request(app)
+            .get("/api/v1/projects")
+            .query({ page: 2, limit: 2 })
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.projects).toHaveLength(1);
+        expect(response.body.data.pagination).toEqual({
+            page: 2,
+            limit: 2,
+            total: 3,
+            totalPages: 2,
+            hasNextPage: false,
+            hasPreviousPage: true
+        });
+    });
+
+    test("rejects invalid project pagination query", async () => {
+        const response = await request(app)
+            .get("/api/v1/projects")
+            .query({ page: 0, limit: 101 })
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(response.status).toBe(422);
+        expect(response.body.error.code).toBe("VALIDATION_ERROR");
+        expect(response.body.error.details).toEqual({
+            page: "Page must be an integer greater than or equal to 1",
+            limit: "Limit must be an integer between 1 and 100"
+        });
+    });
+
 });
