@@ -24,7 +24,11 @@ const listMilestones = async (req, res, next) => {
         const milestones = await milestoneService.listMilestones(
             req.params.projectId,
             req.user.id,
-            req.query.status
+            {
+                page: Number(req.query.page),
+                limit: Number(req.query.limit),
+                status: req.query.status
+            }
         );
 
         return res.status(200).json({
