@@ -27,9 +27,27 @@ const GithubWebhookDelivery =
         "../../src/modules/github/github.webhook.delivery.model"
     );
 
+const {
+    githubWebhookWorker
+} = require(
+    "../../src/workers/githubWebhook.worker"
+);
+
+const {
+    closeGithubWebhookQueue
+} = require(
+    "../../src/queues/githubWebhook.queue"
+);
+
 describe(
     "GitHub webhook idempotency and retry",
     () => {
+        const idempotentDeliveryId =
+            `delivery-idempotent-${Date.now()}`;
+
+        const retryDeliveryId =
+            `delivery-retry-${Date.now()}`;
+
         const secret =
             "test-webhook-secret";
 
@@ -47,6 +65,11 @@ describe(
 
             projectId =
                 new mongoose.Types.ObjectId();
+        });
+
+        afterAll(async () => {
+            await githubWebhookWorker.close();
+            await closeGithubWebhookQueue();
         });
 
         const createIssuePayload = (
@@ -138,22 +161,22 @@ describe(
                     await sendWebhook({
                         payload,
                         deliveryId:
-                            "delivery-idempotent"
+                            idempotentDeliveryId
                     });
 
                 expect(
                     firstResponse.status
-                ).toBe(200);
+                ).toBe(202);
 
                 expect(
-                    firstResponse.body.data.processed
+                    firstResponse.body.data.queued
                 ).toBe(true);
 
                 const secondResponse =
                     await sendWebhook({
                         payload,
                         deliveryId:
-                            "delivery-idempotent"
+                            idempotentDeliveryId
                     });
 
                 expect(
@@ -163,6 +186,29 @@ describe(
                 expect(
                     secondResponse.body.data.duplicate
                 ).toBe(true);
+
+                /*
+                 * The same delivery must only
+                 * produce one database record.
+                 */
+                const deliveries =
+                    await GithubWebhookDelivery.find({
+                        deliveryId:
+                            idempotentDeliveryId
+                    });
+
+                expect(
+                    deliveries
+                ).toHaveLength(1);
+
+                /*
+                 * Wait until the worker has processed
+                 * the queued job.
+                 */
+                await waitForDeliveryStatus(
+                    idempotentDeliveryId,
+                    "PROCESSED"
+                );
 
                 const signals =
                     await GithubSignal.find({
@@ -174,20 +220,15 @@ describe(
                     signals
                 ).toHaveLength(1);
 
-                const deliveries =
-                    await GithubWebhookDelivery.find({
-                        deliveryId:
-                            "delivery-idempotent"
-                    });
+                expect(
+                    signals[0].type
+                ).toBe("ISSUE_OPENED");
 
                 expect(
                     deliveries
                 ).toHaveLength(1);
-
-                expect(
-                    deliveries[0].status
-                ).toBe("PROCESSED");
-            }
+            },
+            15000
         );
 
         test(
@@ -199,33 +240,44 @@ describe(
                     );
 
                 /*
-                 * First attempt:
-                 * No connected repository exists.
+                 * No repository exists yet.
                  *
-                 * The webhook should be recorded
-                 * as PROCESSING and then become FAILED.
+                 * The HTTP request should still
+                 * return 202 because processing is
+                 * asynchronous.
                  */
                 const firstResponse =
                     await sendWebhook({
                         payload,
                         deliveryId:
-                            "delivery-retry"
+                            retryDeliveryId
                     });
 
                 expect(
                     firstResponse.status
-                ).toBe(404);
+                ).toBe(202);
 
                 expect(
-                    firstResponse.body.error.code
-                ).toBe(
-                    "GITHUB_REPOSITORY_NOT_CONNECTED"
+                    firstResponse.body.data.queued
+                ).toBe(true);
+
+                /*
+                 * The worker will retry the job.
+                 *
+                 * Because the repository is missing,
+                 * the delivery will eventually become
+                 * FAILED after the configured attempts.
+                 */
+                await waitForDeliveryStatus(
+                    retryDeliveryId,
+                    "FAILED",
+                    25000
                 );
 
                 let delivery =
                     await GithubWebhookDelivery.findOne({
                         deliveryId:
-                            "delivery-retry"
+                            retryDeliveryId
                     });
 
                 expect(delivery).not.toBeNull();
@@ -242,7 +294,7 @@ describe(
 
                 /*
                  * Repository becomes available
-                 * before GitHub retries the delivery.
+                 * before GitHub sends the delivery again.
                  */
                 await GithubRepository.create({
                     project: projectId,
@@ -257,33 +309,34 @@ describe(
                 });
 
                 /*
-                 * Second attempt with the
-                 * SAME delivery ID.
+                 * Same GitHub delivery ID.
+                 *
+                 * The API should reclaim the FAILED
+                 * delivery and queue it again.
                  */
                 const retryResponse =
                     await sendWebhook({
                         payload,
                         deliveryId:
-                            "delivery-retry"
+                            retryDeliveryId
                     });
 
                 expect(
                     retryResponse.status
-                ).toBe(200);
+                ).toBe(202);
 
                 expect(
-                    retryResponse.body.data.processed
+                    retryResponse.body.data.queued
                 ).toBe(true);
 
-                expect(
-                    retryResponse.body.data.deliveryId
-                ).toBe(
-                    "delivery-retry"
+                /*
+                 * Worker should now process it
+                 * successfully.
+                 */
+                await waitForDeliveryStatus(
+                    retryDeliveryId,
+                    "PROCESSED"
                 );
-
-                expect(
-                    retryResponse.body.data.signalCount
-                ).toBe(1);
 
                 const signals =
                     await GithubSignal.find({
@@ -302,7 +355,7 @@ describe(
                 delivery =
                     await GithubWebhookDelivery.findOne({
                         deliveryId:
-                            "delivery-retry"
+                            retryDeliveryId
                     });
 
                 expect(
@@ -316,7 +369,43 @@ describe(
                 expect(
                     delivery.processedAt
                 ).not.toBeNull();
-            }
+            },
+            30000
+        );
+    },
+);
+
+const waitForDeliveryStatus = async (
+    deliveryId,
+    expectedStatus,
+    timeout = 10000
+) => {
+    const start =
+        Date.now();
+
+    while (
+        Date.now() - start <
+        timeout
+    ) {
+        const delivery =
+            await GithubWebhookDelivery.findOne({
+                deliveryId
+            });
+
+        if (
+            delivery?.status ===
+            expectedStatus
+        ) {
+            return delivery;
+        }
+
+        await new Promise(
+            (resolve) =>
+                setTimeout(resolve, 100)
         );
     }
-);
+
+    throw new Error(
+        `Timed out waiting for delivery ${deliveryId} to become ${expectedStatus}`
+    );
+};

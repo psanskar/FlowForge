@@ -5,15 +5,16 @@ const {
 const {
     getDelivery,
     recordDelivery,
-    markDeliveryProcessed,
-    markDeliveryFailed,
-    claimFailedDelivery
+    claimFailedDelivery,
+    markQueuedDeliveryFailed
 } = require("./github.webhook.delivery.service");
 
 const {
-    getSupportedEvents,
-    processGithubWebhook
+    getSupportedEvents
 } = require("./github.webhook.service");
+
+const githubWebhookQueue =
+    require("../../queues/githubWebhook.queue");
 
 const handleGithubWebhook =
     async (req, res, next) => {
@@ -160,8 +161,27 @@ const handleGithubWebhook =
                 }
 
                 /*
-                 * Another request is currently
-                 * processing this delivery.
+                 * Delivery is already waiting
+                 * in the queue.
+                 */
+                if (
+                    delivery.status ===
+                    "QUEUED"
+                ) {
+                    return res.status(200).json({
+                        success: true,
+                        data: {
+                            received: true,
+                            duplicate: true,
+                            queued: true,
+                            deliveryId
+                        }
+                    });
+                }
+
+                /*
+                 * Worker is currently processing
+                 * this delivery.
                  */
                 if (
                     delivery.status ===
@@ -179,9 +199,10 @@ const handleGithubWebhook =
                 }
 
                 /*
-                 * Previous attempt failed.
+                 * Previous worker attempt failed.
+                 *
                  * Atomically reclaim the delivery
-                 * for retry.
+                 * by moving it back to QUEUED.
                  */
                 if (
                     delivery.status ===
@@ -210,36 +231,45 @@ const handleGithubWebhook =
                 }
             }
 
+            /*
+             * At this point the delivery should be
+             * QUEUED and ready for BullMQ.
+             */
             try {
-                const result =
-                    await processGithubWebhook({
-                        event,
-                        payload
-                    });
-
-                await markDeliveryProcessed(
-                    deliveryId
-                );
-
-                return res.status(200).json({
-                    success: true,
-                    data: {
-                        received: true,
-                        processed: true,
-                        deliveryId,
-                        event,
-                        signalCount:
-                            result.signals.length
-                    }
+                await githubWebhookQueue.enqueueGithubWebhook({
+                    deliveryId,
+                    event,
+                    payload,
+                    jobId: `${deliveryId}:retry:${Date.now()}`
                 });
             } catch (error) {
-                await markDeliveryFailed(
+                await markQueuedDeliveryFailed(
                     deliveryId,
                     error.message
                 );
 
-                throw error;
+                const queueError = new Error(
+                    "GitHub webhook could not be queued"
+                );
+
+                queueError.statusCode = 503;
+                queueError.code =
+                    "GITHUB_WEBHOOK_QUEUE_UNAVAILABLE";
+
+                throw queueError;
             }
+
+
+            return res.status(202).json({
+                success: true,
+                data: {
+                    received: true,
+                    queued: true,
+                    processed: false,
+                    deliveryId,
+                    event
+                }
+            });
         } catch (error) {
             next(error);
         }

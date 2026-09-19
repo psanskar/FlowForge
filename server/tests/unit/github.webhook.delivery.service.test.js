@@ -6,6 +6,7 @@ const GithubWebhookDelivery =
 const {
     getDelivery,
     recordDelivery,
+    markDeliveryProcessing,
     markDeliveryProcessed,
     markDeliveryFailed,
     claimFailedDelivery
@@ -23,7 +24,7 @@ describe("GitHub webhook delivery service", () => {
         expect(result).toBeNull();
     });
 
-    test("records a new delivery as PROCESSING", async () => {
+    test("records a new delivery as QUEUED", async () => {
         const delivery =
             await recordDelivery({
                 deliveryId: "delivery-123",
@@ -36,8 +37,27 @@ describe("GitHub webhook delivery service", () => {
         );
         expect(delivery.event).toBe("push");
         expect(delivery.status).toBe(
+            "QUEUED"
+        );
+    });
+
+    test("marks a queued delivery as PROCESSING", async () => {
+        await recordDelivery({
+            deliveryId: "delivery-123",
+            event: "push"
+        });
+
+        const result =
+            await markDeliveryProcessing(
+                "delivery-123"
+            );
+
+        expect(result).toBeTruthy();
+        expect(result.status).toBe(
             "PROCESSING"
         );
+        expect(result.failureReason).toBeNull();
+        expect(result.processedAt).toBeNull();
     });
 
     test("marks a processing delivery as PROCESSED", async () => {
@@ -45,6 +65,10 @@ describe("GitHub webhook delivery service", () => {
             deliveryId: "delivery-123",
             event: "push"
         });
+
+        await markDeliveryProcessing(
+            "delivery-123"
+        );
 
         const result =
             await markDeliveryProcessed(
@@ -67,6 +91,10 @@ describe("GitHub webhook delivery service", () => {
             event: "push"
         });
 
+        await markDeliveryProcessing(
+            "delivery-123"
+        );
+
         const result =
             await markDeliveryFailed(
                 "delivery-123",
@@ -83,11 +111,15 @@ describe("GitHub webhook delivery service", () => {
         expect(result.processedAt).toBeNull();
     });
 
-    test("claims a FAILED delivery for retry", async () => {
+    test("claims a FAILED delivery for retry and returns it to QUEUED", async () => {
         await recordDelivery({
             deliveryId: "delivery-123",
             event: "push"
         });
+
+        await markDeliveryProcessing(
+            "delivery-123"
+        );
 
         await markDeliveryFailed(
             "delivery-123",
@@ -102,7 +134,7 @@ describe("GitHub webhook delivery service", () => {
 
         expect(result).toBeTruthy();
         expect(result.status).toBe(
-            "PROCESSING"
+            "QUEUED"
         );
         expect(result.failureReason).toBeNull();
         expect(result.processedAt).toBeNull();
@@ -113,6 +145,10 @@ describe("GitHub webhook delivery service", () => {
             deliveryId: "delivery-123",
             event: "push"
         });
+
+        await markDeliveryProcessing(
+            "delivery-123"
+        );
 
         await markDeliveryProcessed(
             "delivery-123"

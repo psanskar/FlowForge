@@ -18,11 +18,12 @@ const githubWebhookDeliverySchema =
             status: {
                 type: String,
                 enum: [
+                    "QUEUED",
                     "PROCESSING",
                     "PROCESSED",
                     "FAILED"
                 ],
-                default: "PROCESSING",
+                default: "QUEUED",
                 required: true
             },
 
