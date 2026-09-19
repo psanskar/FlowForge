@@ -195,7 +195,8 @@ const listTasks = async (
             )
             .sort(sortOptions[sort])
             .skip((page - 1) * limit)
-            .limit(limit),
+            .limit(limit)
+            .lean(),
 
         Task.countDocuments(filter)
     ]);

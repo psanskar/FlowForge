@@ -93,7 +93,8 @@ const listProjects = async (userId, { page = 1, limit = 20 } = {}) => {
                 _id: 1
             })
             .skip(skip)
-            .limit(limit),
+            .limit(limit)
+            .lean(),
 
         Project.countDocuments(filter)
     ]);

@@ -98,7 +98,8 @@ const listMilestones = async (
         Milestone.find(filter)
             .sort({ dueDate: 1, createdAt: 1 })
             .skip(skip)
-            .limit(limit),
+            .limit(limit)
+            .lean(),
         Milestone.countDocuments(filter)
     ]);
 
