@@ -78,7 +78,8 @@ describe("GitHub ingestion normalization", () => {
         ).toEqual({
             type:
                 "PULL_REQUEST_OPENED",
-            externalId: "pr:500",
+            externalId:
+                "pr:500:opened",
             occurredAt:
                 "2026-09-15T11:00:00Z",
             actor: {
@@ -86,6 +87,7 @@ describe("GitHub ingestion normalization", () => {
                 login: "bob"
             },
             metadata: {
+                githubId: 500,
                 number: 42,
                 title:
                     "Add project dashboard",
@@ -125,7 +127,7 @@ describe("GitHub ingestion normalization", () => {
 
         expect(
             signal.externalId
-        ).toBe("pr:501");
+        ).toBe("pr:501:merged");
 
         expect(
             signal.metadata.merged
@@ -161,7 +163,7 @@ describe("GitHub ingestion normalization", () => {
 
         expect(
             signal.externalId
-        ).toBe("pr:502");
+        ).toBe("pr:502:closed");
     });
 
     test("normalizes an opened issue", () => {
@@ -183,7 +185,8 @@ describe("GitHub ingestion normalization", () => {
             normalizeIssue(issue)
         ).toEqual({
             type: "ISSUE_OPENED",
-            externalId: "issue:700",
+            externalId:
+                "issue:700:opened",
             occurredAt:
                 "2026-09-15T14:00:00Z",
             actor: {
@@ -191,6 +194,7 @@ describe("GitHub ingestion normalization", () => {
                 login: "eve"
             },
             metadata: {
+                githubId: 700,
                 number: 20,
                 title:
                     "Dashboard loading slowly",
@@ -223,7 +227,7 @@ describe("GitHub ingestion normalization", () => {
 
         expect(
             signal.externalId
-        ).toBe("issue:701");
+        ).toBe("issue:701:closed");
     });
 
     test("uses different namespaces for PR and issue IDs", () => {
@@ -258,13 +262,13 @@ describe("GitHub ingestion normalization", () => {
             normalizePullRequest(
                 pullRequest
             ).externalId
-        ).toBe("pr:900");
+        ).toBe("pr:900:opened");
 
         expect(
             normalizeIssue(
                 issue
             ).externalId
-        ).toBe("issue:900");
+        ).toBe("issue:900:opened");
     });
 
     test("handles a missing GitHub actor", () => {
@@ -572,7 +576,7 @@ describe("GitHub repository activity ingestion", () => {
 
         expect(
             result.issues[0].externalId
-        ).toBe("issue:301");
+        ).toBe("issue:301:opened");
 
         expect(
             persistSignal

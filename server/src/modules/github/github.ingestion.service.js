@@ -49,29 +49,38 @@ const normalizePullRequest = (
     pullRequest
 ) => {
     let type;
+    let lifecycleAction;
 
-    if (
-        pullRequest.merged_at
-    ) {
+    if (pullRequest.merged_at) {
         type =
             "PULL_REQUEST_MERGED";
+
+        lifecycleAction =
+            "merged";
     } else if (
         pullRequest.state === "open"
     ) {
         type =
             "PULL_REQUEST_OPENED";
+
+        lifecycleAction =
+            "opened";
     } else {
         type =
             "PULL_REQUEST_CLOSED";
+
+        lifecycleAction =
+            "closed";
     }
 
     return {
         type,
 
         externalId:
-            `pr:${pullRequest.id}`,
+            `pr:${pullRequest.id}:${lifecycleAction}`,
 
         occurredAt:
+            pullRequest.updated_at ||
             pullRequest.created_at,
 
         actor: createActor(
@@ -79,6 +88,9 @@ const normalizePullRequest = (
         ),
 
         metadata: {
+            githubId:
+                pullRequest.id,
+
             number:
                 pullRequest.number,
 
@@ -99,6 +111,11 @@ const normalizePullRequest = (
 const normalizeIssue = (
     issue
 ) => {
+    const lifecycleAction =
+        issue.state === "open"
+            ? "opened"
+            : "closed";
+
     return {
         type:
             issue.state === "open"
@@ -106,9 +123,10 @@ const normalizeIssue = (
                 : "ISSUE_CLOSED",
 
         externalId:
-            `issue:${issue.id}`,
+            `issue:${issue.id}:${lifecycleAction}`,
 
         occurredAt:
+            issue.updated_at ||
             issue.created_at,
 
         actor: createActor(
@@ -116,6 +134,9 @@ const normalizeIssue = (
         ),
 
         metadata: {
+            githubId:
+                issue.id,
+
             number:
                 issue.number,
 
@@ -409,8 +430,6 @@ const ingestIssues = async ({
     for (
         const issue of issues
     ) {
-        // GitHub's /issues endpoint
-        // also returns pull requests.
         if (issue.pull_request) {
             continue;
         }

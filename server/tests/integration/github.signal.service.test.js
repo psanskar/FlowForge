@@ -243,6 +243,50 @@ describe("GitHub Signal Service", () => {
         ).toBe(1);
     });
 
+    test(
+        "deduplicates the same GitHub event across REST ingestion and webhook ingestion",
+        async () => {
+            const signalData = createSignalData({
+                type: "PULL_REQUEST_OPENED",
+                externalId: "pr:500:opened",
+                occurredAt: new Date(
+                    "2026-09-17T12:00:00.000Z"
+                ),
+                metadata: {
+                    githubId: 500,
+                    number: 42,
+                    title: "Add project dashboard",
+                    state: "open",
+                    merged: false
+                }
+            });
+
+            // Simulate the signal created by REST synchronization.
+            const restSignal = await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                signalData
+            );
+
+            // Simulate the same event arriving through a webhook.
+            const webhookSignal = await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                {
+                    ...signalData
+                }
+            );
+
+            expect(webhookSignal._id.toString()).toBe(
+                restSignal._id.toString()
+            );
+
+            expect(
+                await GithubSignal.countDocuments({})
+            ).toBe(1);
+        }
+    );
+
     test("allows the same external ID in different repositories", async () => {
         const otherProject = await Project.create({
             name: "Second GitHub Project",
