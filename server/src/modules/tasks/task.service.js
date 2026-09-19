@@ -500,6 +500,7 @@ const deleteTask = async (taskId, userId) => {
     }
 
     const dependencyExists = await Dependency.exists({
+        project: task.project,
         $or: [
             { fromTask: taskId },
             { toTask: taskId }

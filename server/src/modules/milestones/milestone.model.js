@@ -39,13 +39,13 @@ const milestoneSchema = new mongoose.Schema(
     }
 );
 
-milestoneSchema.index({
-    project: 1
-});
-
+// Supports project-scoped milestone listing
+// ordered by due date with deterministic tie-breaking.
 milestoneSchema.index({
     project: 1,
-    dueDate: 1
+    dueDate: 1,
+    createdAt: 1,
+    _id: 1
 });
 
 module.exports = mongoose.model(

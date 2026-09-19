@@ -174,7 +174,8 @@ const listDependencies = async (
     })
         .populate("fromTask", "title status priority progress")
         .populate("toTask", "title status priority progress")
-        .sort({ createdAt: 1 });
+        .sort({ createdAt: 1 })
+        .lean();
 
     return dependencies;
 };

@@ -70,7 +70,14 @@ const projectSchema = new mongoose.Schema(
     }
 );
 
-projectSchema.index({ "members.user": 1 });
-projectSchema.index({ owner: 1 });
+projectSchema.index({
+    "members.user": 1,
+    updatedAt: -1,
+    _id: 1
+});
+
+projectSchema.index({
+    owner: 1
+});
 
 module.exports = mongoose.model("Project", projectSchema);

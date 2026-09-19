@@ -39,4 +39,9 @@ dependencySchema.index(
 dependencySchema.index({ project: 1, fromTask: 1 });
 dependencySchema.index({ project: 1, toTask: 1 });
 
+dependencySchema.index({
+    project: 1,
+    createdAt: 1
+});
+
 module.exports = mongoose.model("Dependency", dependencySchema);
