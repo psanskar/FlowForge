@@ -4,7 +4,10 @@ const { io: createClient } = require("socket.io-client");
 const request = require("supertest");
 
 const app = require("../../src/app");
-const { initializeSocket } = require("../../src/realtime/socket");
+const {
+    initializeSocket,
+    getIO
+} = require("../../src/realtime/socket");
 
 const User = require("../../src/modules/users/user.model");
 const Project = require("../../src/modules/projects/project.model");
@@ -12,12 +15,40 @@ const Task = require("../../src/modules/tasks/task.model");
 
 describe("Socket.IO integration", () => {
     let httpServer;
+    let ioServer;
     let port;
 
     let user;
     let unauthorizedUser;
     let project;
     let secondProject;
+
+    const createSocketClient = (token) => {
+        return createClient(
+            `http://localhost:${port}`,
+            {
+                transports: ["websocket"],
+                auth: {
+                    token
+                }
+            }
+        );
+    };
+
+    const createToken = (userId) => {
+        return jwt.sign(
+            { userId: userId.toString() },
+            process.env.JWT_SECRET,
+            { expiresIn: "1h" }
+        );
+    };
+
+    const connectSocket = async (socket) => {
+        await new Promise((resolve, reject) => {
+            socket.on("connect", resolve);
+            socket.on("connect_error", reject);
+        });
+    };
 
     beforeAll(async () => {
         user = await User.create({
@@ -68,7 +99,7 @@ describe("Socket.IO integration", () => {
 
         httpServer = http.createServer(app);
 
-        initializeSocket(httpServer);
+        ioServer = initializeSocket(httpServer);
 
         await new Promise((resolve) => {
             httpServer.listen(0, resolve);
@@ -78,16 +109,26 @@ describe("Socket.IO integration", () => {
     });
 
     afterAll(async () => {
-        await new Promise((resolve, reject) => {
-            httpServer.close((error) => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
-
-                resolve();
+        if (ioServer) {
+            await new Promise((resolve) => {
+                ioServer.close(() => {
+                    resolve();
+                });
             });
-        });
+        }
+
+        if (httpServer?.listening) {
+            await new Promise((resolve, reject) => {
+                httpServer.close((error) => {
+                    if (error) {
+                        reject(error);
+                        return;
+                    }
+
+                    resolve();
+                });
+            });
+        }
     });
 
     test("starts the Socket.IO test server", () => {
@@ -96,26 +137,11 @@ describe("Socket.IO integration", () => {
     });
 
     test("accepts a valid JWT connection", async () => {
-        const token = jwt.sign(
-            { userId: user._id.toString() },
-            process.env.JWT_SECRET,
-            { expiresIn: "1h" }
-        );
+        const token = createToken(user._id);
 
-        const socket = createClient(
-            `http://localhost:${port}`,
-            {
-                auth: {
-                    token
-                }
-            }
-        );
+        const socket = createSocketClient(token);
 
-        await new Promise((resolve, reject) => {
-            socket.on("connect", resolve);
-
-            socket.on("connect_error", reject);
-        });
+        await connectSocket(socket);
 
         expect(socket.connected).toBe(true);
 
@@ -123,14 +149,7 @@ describe("Socket.IO integration", () => {
     });
 
     test("rejects a connection with an invalid JWT", async () => {
-        const socket = createClient(
-            `http://localhost:${port}`,
-            {
-                auth: {
-                    token: "invalid-token"
-                }
-            }
-        );
+        const socket = createSocketClient("invalid-token");
 
         await new Promise((resolve, reject) => {
             socket.on("connect", () => {
@@ -156,26 +175,11 @@ describe("Socket.IO integration", () => {
     });
 
     test("allows a project member to join the project room", async () => {
-        const token = jwt.sign(
-            { userId: user._id.toString() },
-            process.env.JWT_SECRET,
-            { expiresIn: "1h" }
-        );
+        const token = createToken(user._id);
 
-        const socket = createClient(
-            `http://localhost:${port}`,
-            {
-                auth: {
-                    token
-                }
-            }
-        );
+        const socket = createSocketClient(token);
 
-        await new Promise((resolve, reject) => {
-            socket.on("connect", resolve);
-
-            socket.on("connect_error", reject);
-        });
+        await connectSocket(socket);
 
         const response = await new Promise((resolve) => {
             socket.emit(
@@ -194,26 +198,13 @@ describe("Socket.IO integration", () => {
     });
 
     test("rejects a non-member from joining the project room", async () => {
-        const token = jwt.sign(
-            { userId: unauthorizedUser._id.toString() },
-            process.env.JWT_SECRET,
-            { expiresIn: "1h" }
+        const token = createToken(
+            unauthorizedUser._id
         );
 
-        const socket = createClient(
-            `http://localhost:${port}`,
-            {
-                auth: {
-                    token
-                }
-            }
-        );
+        const socket = createSocketClient(token);
 
-        await new Promise((resolve, reject) => {
-            socket.on("connect", resolve);
-
-            socket.on("connect_error", reject);
-        });
+        await connectSocket(socket);
 
         const response = await new Promise((resolve) => {
             socket.emit(
@@ -232,26 +223,11 @@ describe("Socket.IO integration", () => {
     });
 
     test("allows a project member to leave the project room", async () => {
-        const token = jwt.sign(
-            { userId: user._id.toString() },
-            process.env.JWT_SECRET,
-            { expiresIn: "1h" }
-        );
+        const token = createToken(user._id);
 
-        const socket = createClient(
-            `http://localhost:${port}`,
-            {
-                auth: {
-                    token
-                }
-            }
-        );
+        const socket = createSocketClient(token);
 
-        await new Promise((resolve, reject) => {
-            socket.on("connect", resolve);
-
-            socket.on("connect_error", reject);
-        });
+        await connectSocket(socket);
 
         const joinResponse = await new Promise((resolve) => {
             socket.emit(
@@ -280,26 +256,11 @@ describe("Socket.IO integration", () => {
     });
 
     test("isolates events between project rooms", async () => {
-        const token = jwt.sign(
-            { userId: user._id.toString() },
-            process.env.JWT_SECRET,
-            { expiresIn: "1h" }
-        );
+        const token = createToken(user._id);
 
-        const socket = createClient(
-            `http://localhost:${port}`,
-            {
-                auth: {
-                    token
-                }
-            }
-        );
+        const socket = createSocketClient(token);
 
-        await new Promise((resolve, reject) => {
-            socket.on("connect", resolve);
-
-            socket.on("connect_error", reject);
-        });
+        await connectSocket(socket);
 
         const joinResponse = await new Promise((resolve) => {
             socket.emit(
@@ -310,8 +271,6 @@ describe("Socket.IO integration", () => {
         });
 
         expect(joinResponse.success).toBe(true);
-
-        const { getIO } = require("../../src/realtime/socket");
 
         const io = getIO();
 
@@ -338,42 +297,36 @@ describe("Socket.IO integration", () => {
     });
 
     test("emits task.updated when a task is updated through the API", async () => {
-        const token = jwt.sign(
-            { userId: user._id.toString() },
-            process.env.JWT_SECRET,
-            { expiresIn: "1h" }
-        );
+        const token = createToken(user._id);
 
         const createResponse = await request(app)
-            .post(`/api/v1/projects/${project._id}/tasks`)
-            .set("Authorization", `Bearer ${token}`)
+            .post(
+                `/api/v1/projects/${project._id}/tasks`
+            )
+            .set(
+                "Authorization",
+                `Bearer ${token}`
+            )
             .send({
                 title: "Realtime task",
-                description: "Task used for Socket.IO update testing",
+                description:
+                    "Task used for Socket.IO update testing",
                 priority: "high",
                 status: "todo"
             });
 
         expect(createResponse.status).toBe(201);
 
-        const taskId = createResponse.body.data.task._id;
+        const taskId =
+            createResponse.body.data.task._id;
 
-        expect(createResponse.body.data.task.version).toBe(1);
+        expect(
+            createResponse.body.data.task.version
+        ).toBe(1);
 
-        const socket = createClient(
-            `http://localhost:${port}`,
-            {
-                auth: {
-                    token
-                }
-            }
-        );
+        const socket = createSocketClient(token);
 
-        await new Promise((resolve, reject) => {
-            socket.on("connect", resolve);
-
-            socket.on("connect_error", reject);
-        });
+        await connectSocket(socket);
 
         const joinResponse = await new Promise((resolve) => {
             socket.emit(
@@ -385,24 +338,32 @@ describe("Socket.IO integration", () => {
 
         expect(joinResponse.success).toBe(true);
 
-        const taskUpdatedEvent = new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => {
-                reject(
-                    new Error(
-                        "Timed out waiting for task.updated event"
-                    )
-                );
-            }, 3000);
+        const taskUpdatedEvent = new Promise(
+            (resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(
+                        new Error(
+                            "Timed out waiting for task.updated event"
+                        )
+                    );
+                }, 3000);
 
-            socket.once("task.updated", (data) => {
-                clearTimeout(timeout);
-                resolve(data);
-            });
-        });
+                socket.once(
+                    "task.updated",
+                    (data) => {
+                        clearTimeout(timeout);
+                        resolve(data);
+                    }
+                );
+            }
+        );
 
         const updateResponse = await request(app)
             .patch(`/api/v1/tasks/${taskId}`)
-            .set("Authorization", `Bearer ${token}`)
+            .set(
+                "Authorization",
+                `Bearer ${token}`
+            )
             .send({
                 version: 1,
                 progress: 50,
@@ -410,37 +371,48 @@ describe("Socket.IO integration", () => {
             });
 
         expect(updateResponse.status).toBe(200);
-        expect(updateResponse.body.success).toBe(true);
+        expect(
+            updateResponse.body.success
+        ).toBe(true);
 
-        const updatedTask = updateResponse.body.data.task;
+        const updatedTask =
+            updateResponse.body.data.task;
 
         expect(updatedTask.version).toBe(2);
         expect(updatedTask.progress).toBe(50);
-        expect(updatedTask.status).toBe("in_progress");
+        expect(updatedTask.status).toBe(
+            "in_progress"
+        );
 
-        const eventPayload = await taskUpdatedEvent;
+        const eventPayload =
+            await taskUpdatedEvent;
 
         expect(eventPayload).toBeDefined();
         expect(eventPayload.task).toBeDefined();
 
-        expect(eventPayload.task._id.toString()).toBe(
-            taskId.toString()
-        );
+        expect(
+            eventPayload.task._id.toString()
+        ).toBe(taskId.toString());
 
-        expect(eventPayload.task.project.toString()).toBe(
-            project._id.toString()
-        );
+        expect(
+            eventPayload.task.project.toString()
+        ).toBe(project._id.toString());
 
         expect(eventPayload.task.version).toBe(2);
         expect(eventPayload.task.progress).toBe(50);
-        expect(eventPayload.task.status).toBe("in_progress");
+        expect(eventPayload.task.status).toBe(
+            "in_progress"
+        );
 
-        const databaseTask = await Task.findById(taskId);
+        const databaseTask =
+            await Task.findById(taskId);
 
         expect(databaseTask).not.toBeNull();
         expect(databaseTask.version).toBe(2);
         expect(databaseTask.progress).toBe(50);
-        expect(databaseTask.status).toBe("in_progress");
+        expect(databaseTask.status).toBe(
+            "in_progress"
+        );
 
         socket.disconnect();
     });

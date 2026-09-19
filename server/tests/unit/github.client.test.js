@@ -119,44 +119,239 @@ describe("GitHub client", () => {
     });
 
     test("maps 403 to GITHUB_RATE_LIMITED", async () => {
+        jest.useFakeTimers();
+
         global.fetch = jest.fn().mockResolvedValue({
             ok: false,
             status: 403
         });
 
-        await expect(
+        const promise = expect(
             getRepository("owner", "flowforge")
         ).rejects.toMatchObject({
             statusCode: 503,
             code: "GITHUB_RATE_LIMITED"
         });
+
+        await jest.advanceTimersByTimeAsync(1000);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await promise;
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            3
+        );
+
+        jest.useRealTimers();
     });
 
     test("maps 429 to GITHUB_RATE_LIMITED", async () => {
+        jest.useFakeTimers();
+
         global.fetch = jest.fn().mockResolvedValue({
             ok: false,
             status: 429
         });
 
-        await expect(
+        const promise = expect(
             getRepository("owner", "flowforge")
         ).rejects.toMatchObject({
             statusCode: 503,
             code: "GITHUB_RATE_LIMITED"
         });
+
+        await jest.advanceTimersByTimeAsync(1000);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await promise;
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            3
+        );
+
+        jest.useRealTimers();
     });
 
     test("maps other GitHub API errors to GITHUB_API_ERROR", async () => {
+        jest.useFakeTimers();
+
         global.fetch = jest.fn().mockResolvedValue({
             ok: false,
             status: 500
         });
 
-        await expect(
+        const promise = expect(
             getRepository("owner", "flowforge")
         ).rejects.toMatchObject({
             statusCode: 502,
             code: "GITHUB_API_ERROR"
         });
+
+        await jest.advanceTimersByTimeAsync(1000);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await promise;
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            3
+        );
+
+        jest.useRealTimers();
     });
+        test("retries a 500 response before succeeding", async () => {
+        jest.useFakeTimers();
+
+        global.fetch = jest
+            .fn()
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 500
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                json: jest.fn().mockResolvedValue({
+                    id: 123,
+                    name: "flowforge"
+                })
+            });
+
+        const promise = getRepository(
+            "owner",
+            "flowforge"
+        );
+
+        await jest.advanceTimersByTimeAsync(1000);
+
+        const result = await promise;
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            2
+        );
+
+        expect(result).toEqual({
+            id: 123,
+            name: "flowforge"
+        });
+
+        jest.useRealTimers();
+    });
+
+    test("retries a 429 response before succeeding", async () => {
+        jest.useFakeTimers();
+
+        global.fetch = jest
+            .fn()
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 429,
+                headers: {
+                    get: jest.fn().mockReturnValue(null)
+                }
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                json: jest.fn().mockResolvedValue({
+                    id: 123,
+                    name: "flowforge"
+                })
+            });
+
+        const promise = getRepository(
+            "owner",
+            "flowforge"
+        );
+
+        await jest.advanceTimersByTimeAsync(1000);
+
+        const result = await promise;
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            2
+        );
+
+        expect(result).toEqual({
+            id: 123,
+            name: "flowforge"
+        });
+
+        jest.useRealTimers();
+    });
+
+    test("respects Retry-After when GitHub provides it", async () => {
+        jest.useFakeTimers();
+
+        global.fetch = jest
+            .fn()
+            .mockResolvedValueOnce({
+                ok: false,
+                status: 429,
+                headers: {
+                    get: jest
+                        .fn()
+                        .mockReturnValue("2")
+                }
+            })
+            .mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                json: jest.fn().mockResolvedValue({
+                    id: 123
+                })
+            });
+
+        const promise = getRepository(
+            "owner",
+            "flowforge"
+        );
+
+        await jest.advanceTimersByTimeAsync(1999);
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            1
+        );
+
+        await jest.advanceTimersByTimeAsync(1);
+
+        const result = await promise;
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            2
+        );
+
+        expect(result).toEqual({
+            id: 123
+        });
+
+        jest.useRealTimers();
+    });
+
+    test("fails after retry limit is exhausted", async () => {
+        jest.useFakeTimers();
+
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: false,
+            status: 500
+        });
+
+        const promise = expect(
+            getRepository("owner", "flowforge")
+        ).rejects.toMatchObject({
+            statusCode: 502,
+            code: "GITHUB_API_ERROR"
+        });
+
+        await jest.advanceTimersByTimeAsync(1000);
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await promise;
+
+        expect(global.fetch).toHaveBeenCalledTimes(
+            3
+        );
+
+        jest.useRealTimers();
+    });
+
 });
