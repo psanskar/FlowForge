@@ -191,6 +191,17 @@ const addRiskEvidence = (risk) => {
             );
             break;
 
+        
+        case "GITHUB_HIGH_PR_CYCLE_TIME":
+            evidence.push(
+                `${risk.mergedPrCount} merged pull requests were analyzed`
+            );
+
+            evidence.push(
+                `Median pull request cycle time is ${risk.medianCycleTimeHours} hours`
+            );
+            break;
+
         default:
             break;
     }

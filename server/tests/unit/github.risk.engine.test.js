@@ -116,80 +116,274 @@ describe("GitHub Risk Engine", () => {
         });
     });
 
-describe("Pull request merge throughput", () => {
-    test("flags low merge throughput when no PRs are merged", () => {
-        const signals = [
-            createSignal({
-                type: "PULL_REQUEST_OPENED",
-                occurredAt: "2026-09-10T12:00:00.000Z",
-                externalId: "pr:301:opened"
-            }),
-            createSignal({
-                type: "PULL_REQUEST_OPENED",
-                occurredAt: "2026-09-11T12:00:00.000Z",
-                externalId: "pr:302:opened"
-            }),
-            createSignal({
-                type: "PULL_REQUEST_OPENED",
-                occurredAt: "2026-09-12T12:00:00.000Z",
-                externalId: "pr:303:opened"
-            })
-        ];
+    describe("Pull request merge throughput", () => {   
+        test("flags low merge throughput when no PRs are merged", () => {
+            const signals = [
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-10T12:00:00.000Z",
+                    externalId: "pr:301:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-11T12:00:00.000Z",
+                    externalId: "pr:302:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-12T12:00:00.000Z",
+                    externalId: "pr:303:opened"
+                })
+            ];
 
-        const risks = analyzeGithubProject({
-            githubSignals: signals,
-            now
+            const risks = analyzeGithubProject({
+                githubSignals: signals,
+                now
+            });
+
+            const throughputRisk = risks.find(
+                (risk) =>
+                    risk.type ===
+                    "GITHUB_LOW_MERGE_THROUGHPUT"
+            );
+
+            expect(throughputRisk).toBeDefined();
+
+            expect(throughputRisk).toMatchObject({
+                type: "GITHUB_LOW_MERGE_THROUGHPUT",
+                severity: "MEDIUM",
+                windowDays: 14,
+                openedCount: 3,
+                mergedCount: 0
+            });
         });
 
-        const throughputRisk = risks.find(
-            (risk) =>
-                risk.type ===
-                "GITHUB_LOW_MERGE_THROUGHPUT"
-        );
+        test("does not flag normal merge throughput", () => {
+            const signals = [
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-10T12:00:00.000Z",
+                    externalId: "pr:304:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-11T12:00:00.000Z",
+                    externalId: "pr:305:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-12T12:00:00.000Z",
+                    externalId: "pr:306:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-13T12:00:00.000Z",
+                    externalId: "pr:304:merged"
+                })
+            ];
 
-        expect(throughputRisk).toBeDefined();
+            const risks = analyzeGithubProject({
+                githubSignals: signals,
+                now
+            });
 
-        expect(throughputRisk).toMatchObject({
-            type: "GITHUB_LOW_MERGE_THROUGHPUT",
+            expect(risks).toEqual([]);
+        });
+    });
+
+        describe("Pull request cycle time", () => {
+        test("flags elevated median PR cycle time", () => {
+            const signals = [
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-01T12:00:00.000Z",
+                    externalId: "pr:401:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-05T12:00:00.000Z",
+                    externalId: "pr:401:merged"
+                }),
+
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-02T12:00:00.000Z",
+                    externalId: "pr:402:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-07T12:00:00.000Z",
+                    externalId: "pr:402:merged"
+                }),
+
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-03T12:00:00.000Z",
+                    externalId: "pr:403:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-10T12:00:00.000Z",
+                    externalId: "pr:403:merged"
+                })
+            ];
+
+            const risks = analyzeGithubProject({
+                githubSignals: signals,
+                now
+            });
+
+            const cycleTimeRisk = risks.find(
+                (risk) =>
+                    risk.type ===
+                    "GITHUB_HIGH_PR_CYCLE_TIME"
+            );
+
+            expect(cycleTimeRisk).toBeDefined();
+
+            expect(cycleTimeRisk).toMatchObject({
+            type: "GITHUB_HIGH_PR_CYCLE_TIME",
             severity: "MEDIUM",
-            windowDays: 14,
-            openedCount: 3,
-            mergedCount: 0
+            mergedPrCount: 3,
+            medianCycleTimeHours: 120
         });
-    });
-
-    test("does not flag normal merge throughput", () => {
-        const signals = [
-            createSignal({
-                type: "PULL_REQUEST_OPENED",
-                occurredAt: "2026-09-10T12:00:00.000Z",
-                externalId: "pr:304:opened"
-            }),
-            createSignal({
-                type: "PULL_REQUEST_OPENED",
-                occurredAt: "2026-09-11T12:00:00.000Z",
-                externalId: "pr:305:opened"
-            }),
-            createSignal({
-                type: "PULL_REQUEST_OPENED",
-                occurredAt: "2026-09-12T12:00:00.000Z",
-                externalId: "pr:306:opened"
-            }),
-            createSignal({
-                type: "PULL_REQUEST_MERGED",
-                occurredAt: "2026-09-13T12:00:00.000Z",
-                externalId: "pr:304:merged"
-            })
-        ];
-
-        const risks = analyzeGithubProject({
-            githubSignals: signals,
-            now
         });
 
-        expect(risks).toEqual([]);
+        test("flags very high median PR cycle time as HIGH", () => {
+            const signals = [
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-03T12:00:00.000Z",
+                    externalId: "pr:408:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-10T12:00:00.000Z",
+                    externalId: "pr:408:merged"
+                }),
+
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-03T12:00:00.000Z",
+                    externalId: "pr:409:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-10T12:00:00.000Z",
+                    externalId: "pr:409:merged"
+                }),
+
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-03T12:00:00.000Z",
+                    externalId: "pr:410:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-10T12:00:00.000Z",
+                    externalId: "pr:410:merged"
+                })
+            ];
+
+            const risks = analyzeGithubProject({
+                githubSignals: signals,
+                now
+            });
+
+            const cycleTimeRisk = risks.find(
+                (risk) =>
+                    risk.type ===
+                    "GITHUB_HIGH_PR_CYCLE_TIME"
+            );
+
+            expect(cycleTimeRisk).toBeDefined();
+
+            expect(cycleTimeRisk).toMatchObject({
+                type: "GITHUB_HIGH_PR_CYCLE_TIME",
+                severity: "HIGH",
+                mergedPrCount: 3,
+                medianCycleTimeHours: 168
+            });
+        });
+
+        test("does not flag normal PR cycle time", () => {
+            const signals = [
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-14T12:00:00.000Z",
+                    externalId: "pr:404:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-15T12:00:00.000Z",
+                    externalId: "pr:404:merged"
+                }),
+
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-13T12:00:00.000Z",
+                    externalId: "pr:405:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-14T12:00:00.000Z",
+                    externalId: "pr:405:merged"
+                }),
+
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-12T12:00:00.000Z",
+                    externalId: "pr:406:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-13T12:00:00.000Z",
+                    externalId: "pr:406:merged"
+                })
+            ];
+
+            const risks = analyzeGithubProject({
+                githubSignals: signals,
+                now
+            });
+
+            expect(
+                risks.some(
+                    (risk) =>
+                        risk.type ===
+                        "GITHUB_HIGH_PR_CYCLE_TIME"
+                )
+            ).toBe(false);
+        });
+
+        test("does not evaluate cycle time with fewer than three merged PRs", () => {
+            const signals = [
+                createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    occurredAt: "2026-09-01T12:00:00.000Z",
+                    externalId: "pr:407:opened"
+                }),
+                createSignal({
+                    type: "PULL_REQUEST_MERGED",
+                    occurredAt: "2026-09-10T12:00:00.000Z",
+                    externalId: "pr:407:merged"
+                })
+            ];
+
+            const risks = analyzeGithubProject({
+                githubSignals: signals,
+                now
+            });
+
+            expect(
+                risks.some(
+                    (risk) =>
+                        risk.type ===
+                        "GITHUB_HIGH_PR_CYCLE_TIME"
+                )
+            ).toBe(false);
+        });
     });
-});
 
     test("flags an open PR at 7 days as MEDIUM risk", () => {
         const signals = [

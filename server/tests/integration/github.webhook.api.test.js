@@ -226,6 +226,7 @@ describe("GitHub webhook API", () => {
                         "X-Hub-Signature-256",
                         "sha256=invalid"
                     )
+
                     .set(
                         "Content-Type",
                         "application/json"

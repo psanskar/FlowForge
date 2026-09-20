@@ -11,13 +11,12 @@ const connection = {
 const createTestQueue = () => {
     let processor = null;
     let closed = false;
+    let worker = null;
 
     const processJob = async (job) => {
         if (!processor || closed) {
             return;
         }
-
-        let lastError = null;
 
         for (
             let attempt = 0;
@@ -40,8 +39,6 @@ const createTestQueue = () => {
 
                 return result;
             } catch (error) {
-                lastError = error;
-
                 if (
                     attempt + 1 >=
                     job.opts.attempts
@@ -58,11 +55,7 @@ const createTestQueue = () => {
                 }
             }
         }
-
-        return lastError;
     };
-
-    let worker = null;
 
     return {
         add: async (
@@ -82,7 +75,7 @@ const createTestQueue = () => {
                 opts: {
                     attempts:
                         options.attempts ||
-                        5
+                        3
                 },
 
                 attemptsMade: 0
@@ -124,20 +117,20 @@ const createTestQueue = () => {
     };
 };
 
-const githubWebhookQueue =
+const healthSnapshotQueue =
     process.env.NODE_ENV === "test"
         ? createTestQueue()
         : new Queue(
-              "github-webhook",
+              "health-snapshot",
               {
                   connection,
 
                   defaultJobOptions: {
-                      attempts: 5,
+                      attempts: 3,
 
                       backoff: {
                           type: "exponential",
-                          delay: 1000
+                          delay: 5000
                       },
 
                       removeOnComplete: {
@@ -155,19 +148,17 @@ const githubWebhookQueue =
               }
           );
 
-const enqueueGithubWebhook =
+const enqueueHealthSnapshot =
     async ({
-        deliveryId,
-        event,
-        payload,
-        jobId = deliveryId
+        projectId,
+        snapshotDate,
+        jobId
     }) => {
-        return githubWebhookQueue.add(
-            "process-webhook",
+        return healthSnapshotQueue.add(
+            "capture-project-health",
             {
-                deliveryId,
-                event,
-                payload
+                projectId,
+                snapshotDate
             },
             {
                 jobId
@@ -175,13 +166,13 @@ const enqueueGithubWebhook =
         );
     };
 
-const closeGithubWebhookQueue =
+const closeHealthSnapshotQueue =
     async () => {
-        await githubWebhookQueue.close();
+        await healthSnapshotQueue.close();
     };
 
 module.exports = {
-    githubWebhookQueue,
-    enqueueGithubWebhook,
-    closeGithubWebhookQueue
+    healthSnapshotQueue,
+    enqueueHealthSnapshot,
+    closeHealthSnapshotQueue
 };

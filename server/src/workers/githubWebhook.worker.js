@@ -3,6 +3,10 @@ const {
 } = require("bullmq");
 
 const {
+    EventEmitter
+} = require("events");
+
+const {
     markDeliveryProcessing,
     markDeliveryProcessed,
     markDeliveryFailed,
@@ -17,74 +21,111 @@ const {
     "../modules/github/github.webhook.service"
 );
 
+const {
+    githubWebhookQueue
+} = require(
+    "../queues/githubWebhook.queue"
+);
+
 const connection = {
     url:
         process.env.REDIS_URL ||
         "redis://127.0.0.1:6379"
 };
 
-const githubWebhookWorker =
-    new Worker(
-        "github-webhook",
-        async (job) => {
-            const {
-                deliveryId,
-                event,
-                payload
-            } = job.data;
+const processGithubWebhookJob =
+    async (job) => {
+        const {
+            deliveryId,
+            event,
+            payload
+        } = job.data;
 
-            const delivery =
-                await markDeliveryProcessing(
-                    deliveryId
-                );
+        const delivery =
+            await markDeliveryProcessing(
+                deliveryId
+            );
 
-            if (!delivery) {
-                return {
-                    skipped: true,
-                    deliveryId
-                };
-            }
-
-            try {
-                const result =
-                    await processGithubWebhook({
-                        event,
-                        payload
-                    });
-
-                await markDeliveryProcessed(
-                    deliveryId
-                );
-
-                return {
-                    deliveryId,
-                    signalCount:
-                        result.signals.length
-                };
-            } catch (error) {
-                const isFinalAttempt =
-                    job.attemptsMade + 1 >=
-                    job.opts.attempts;
-
-                if (isFinalAttempt) {
-                    await markDeliveryFailed(
-                        deliveryId,
-                        error.message
-                    );
-                } else {
-                    await resetDeliveryToQueued(
-                        deliveryId
-                    );
-                }
-
-                throw error;
-            }
-        },
-        {
-            connection,
-            concurrency: 5
+        if (!delivery) {
+            return {
+                skipped: true,
+                deliveryId
+            };
         }
+
+        try {
+            const result =
+                await processGithubWebhook({
+                    event,
+                    payload
+                });
+
+            await markDeliveryProcessed(
+                deliveryId
+            );
+
+            return {
+                deliveryId,
+                signalCount:
+                    result.signals.length
+            };
+        } catch (error) {
+            const isFinalAttempt =
+                job.attemptsMade + 1 >=
+                job.opts.attempts;
+
+            if (isFinalAttempt) {
+                await markDeliveryFailed(
+                    deliveryId,
+                    error.message
+                );
+            } else {
+                await resetDeliveryToQueued(
+                    deliveryId
+                );
+            }
+
+            throw error;
+        }
+    };
+
+const createTestWorker = () => {
+    const testWorker =
+        new EventEmitter();
+
+    let closed = false;
+
+    testWorker.close = async () => {
+        closed = true;
+    };
+
+    githubWebhookQueue.setProcessor(
+        async (job) => {
+            if (closed) {
+                return;
+            }
+
+            return processGithubWebhookJob(
+                job
+            );
+        },
+        testWorker
     );
+
+    return testWorker;
+};
+
+const githubWebhookWorker =
+    process.env.NODE_ENV === "test"
+        ? createTestWorker()
+        : new Worker(
+              "github-webhook",
+              processGithubWebhookJob,
+              {
+                  connection,
+                  concurrency: 5
+              }
+          );
 
 githubWebhookWorker.on(
     "completed",
@@ -123,7 +164,9 @@ const startGithubWebhookWorker = () => {
 if (require.main === module) {
     startGithubWebhookWorker();
 
-    const shutdown = async (signal) => {
+    const shutdown = async (
+        signal
+    ) => {
         console.log(
             `Received ${signal}. Shutting down GitHub webhook worker...`
         );

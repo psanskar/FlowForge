@@ -7,6 +7,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "worker:github": "node src/workers/githubWebhook.worker.js",
+    "worker:health": "node src/workers/healthSnapshot.worker.js",
+    "scheduler:health": "node src/schedulers/healthSnapshot.scheduler.runner.js",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "keywords": [],

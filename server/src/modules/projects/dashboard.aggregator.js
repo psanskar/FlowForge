@@ -101,42 +101,60 @@ const getMilestoneProgress = (
     milestones,
     tasks
 ) => {
-    return milestones.map(
-        (milestone) => {
-            const milestoneTasks =
-                tasks.filter(
-                    (task) =>
-                        task.milestone &&
-                        task.milestone.toString() ===
-                            milestone._id.toString()
-                );
+    const taskStatsByMilestone = new Map();
 
-            const completedTasks =
-                milestoneTasks.filter(
-                    (task) =>
-                        task.status ===
-                        "completed"
-                ).length;
-
-            const unfinishedTasks =
-                milestoneTasks.length -
-                completedTasks;
-
-            return {
-                id: milestone._id,
-                name: milestone.name,
-                description:
-                    milestone.description,
-                dueDate:
-                    milestone.dueDate,
-                status: milestone.status,
-                totalTasks:
-                    milestoneTasks.length,
-                completedTasks,
-                unfinishedTasks
-            };
+    for (const task of tasks) {
+        if (!task.milestone) {
+            continue;
         }
-    );
+
+        const milestoneId =
+            task.milestone.toString();
+
+        let stats =
+            taskStatsByMilestone.get(milestoneId);
+
+        if (!stats) {
+            stats = {
+                totalTasks: 0,
+                completedTasks: 0
+            };
+
+            taskStatsByMilestone.set(
+                milestoneId,
+                stats
+            );
+        }
+
+        stats.totalTasks += 1;
+
+        if (task.status === "completed") {
+            stats.completedTasks += 1;
+        }
+    }
+
+    return milestones.map((milestone) => {
+        const stats =
+            taskStatsByMilestone.get(
+                milestone._id.toString()
+            ) || {
+                totalTasks: 0,
+                completedTasks: 0
+            };
+
+        return {
+            id: milestone._id,
+            name: milestone.name,
+            description: milestone.description,
+            dueDate: milestone.dueDate,
+            status: milestone.status,
+            totalTasks: stats.totalTasks,
+            completedTasks: stats.completedTasks,
+            unfinishedTasks:
+                stats.totalTasks -
+                stats.completedTasks
+        };
+    });
 };
 
 const getWorkload = (

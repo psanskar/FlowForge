@@ -7,8 +7,15 @@ const ISSUE_BACKLOG_THRESHOLD = 3;
 const PR_ANALYSIS_DAYS = 14;
 const MIN_PR_OPENED_FOR_THROUGHPUT = 3;
 
+const PR_CYCLE_TIME_WARNING_HOURS = 72;
+const PR_CYCLE_TIME_HIGH_RISK_HOURS = 168;
+const MIN_MERGED_PRS_FOR_CYCLE_TIME = 3;
+
 const MILLISECONDS_PER_DAY =
     1000 * 60 * 60 * 24;
+
+const MILLISECONDS_PER_HOUR =
+    1000 * 60 * 60;
 
 const getDaysDifference = (from, to) => {
     return Math.floor(
@@ -315,6 +322,156 @@ const analyzeMergeThroughput = (
     ];
 };
 
+const calculatePullRequestCycleTimes = (
+    signals,
+    now
+) => {
+    const pullRequests = new Map();
+
+    const pullRequestSignals = signals.filter(
+        (signal) =>
+            signal.type ===
+                "PULL_REQUEST_OPENED" ||
+            signal.type ===
+                "PULL_REQUEST_MERGED"
+    );
+
+    for (const signal of pullRequestSignals) {
+        const id = getGithubItemId(signal);
+        const occurredAt = getSignalDate(signal);
+
+        if (!id || !occurredAt) {
+            continue;
+        }
+
+        if (!pullRequests.has(id)) {
+            pullRequests.set(id, {});
+        }
+
+        const pullRequest =
+            pullRequests.get(id);
+
+        if (
+            signal.type ===
+            "PULL_REQUEST_OPENED"
+        ) {
+            pullRequest.openedAt = occurredAt;
+        }
+
+        if (
+            signal.type ===
+            "PULL_REQUEST_MERGED"
+        ) {
+            pullRequest.mergedAt = occurredAt;
+        }
+    }
+
+    const cycleTimes = [];
+
+    for (const pullRequest of pullRequests.values()) {
+        if (
+            !pullRequest.openedAt ||
+            !pullRequest.mergedAt
+        ) {
+            continue;
+        }
+
+        if (
+            pullRequest.mergedAt >
+            now
+        ) {
+            continue;
+        }
+
+        const cycleTimeHours =
+            (
+                pullRequest.mergedAt.getTime() -
+                pullRequest.openedAt.getTime()
+            ) /
+            MILLISECONDS_PER_HOUR;
+
+        if (cycleTimeHours < 0) {
+            continue;
+        }
+
+        cycleTimes.push(cycleTimeHours);
+    }
+
+    return cycleTimes;
+};
+
+const calculateMedian = (values) => {
+    if (!values.length) {
+        return null;
+    }
+
+    const sorted = [...values].sort(
+        (a, b) => a - b
+    );
+
+    const middle =
+        Math.floor(sorted.length / 2);
+
+    if (sorted.length % 2 === 0) {
+        return (
+            sorted[middle - 1] +
+            sorted[middle]
+        ) / 2;
+    }
+
+    return sorted[middle];
+};
+
+const analyzePullRequestCycleTime = (
+    signals,
+    now
+) => {
+    const cycleTimes =
+        calculatePullRequestCycleTimes(
+            signals,
+            now
+        );
+
+    if (
+        cycleTimes.length <
+        MIN_MERGED_PRS_FOR_CYCLE_TIME
+    ) {
+        return [];
+    }
+
+    const medianCycleTimeHours =
+        calculateMedian(cycleTimes);
+
+    if (
+        medianCycleTimeHours <
+        PR_CYCLE_TIME_WARNING_HOURS
+    ) {
+        return [];
+    }
+
+    const severity =
+        medianCycleTimeHours >=
+        PR_CYCLE_TIME_HIGH_RISK_HOURS
+            ? "HIGH"
+            : "MEDIUM";
+
+    return [
+        {
+            type: "GITHUB_HIGH_PR_CYCLE_TIME",
+            severity,
+            mergedPrCount: cycleTimes.length,
+            medianCycleTimeHours:
+                Number(
+                    medianCycleTimeHours.toFixed(
+                        1
+                    )
+                ),
+            message:
+                `Median pull request cycle time is ${medianCycleTimeHours.toFixed(1)} hours`
+        }
+    ];
+};
+
 const analyzeGithubProject = ({
     githubSignals = [],
     now = new Date()
@@ -331,6 +488,11 @@ const analyzeGithubProject = ({
         ),
 
         ...analyzeMergeThroughput(
+            githubSignals,
+            now
+        ),
+
+        ...analyzePullRequestCycleTime(
             githubSignals,
             now
         )
