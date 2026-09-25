@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
     Link,
+    useNavigate,
     useParams
 } from "react-router-dom";
 
@@ -46,6 +47,7 @@ const formatDate = (date) => {
 
 const ProjectTasksPage = () => {
     const { projectId } = useParams();
+    const navigate = useNavigate();
 
     const [page, setPage] = useState(1);
     const [status, setStatus] = useState("");
@@ -167,6 +169,18 @@ const ProjectTasksPage = () => {
                 </div>
 
                 <div>
+                    <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() =>
+                            navigate(
+                                `/app/projects/${projectId}/tasks/new`
+                            )
+                        }
+                    >
+                        Create task
+                    </button>
+
                     <strong>
                         {pagination?.total ?? 0}
                     </strong>
