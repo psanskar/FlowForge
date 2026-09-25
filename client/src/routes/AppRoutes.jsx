@@ -12,6 +12,7 @@ import OverviewPage from "../pages/OverviewPage";
 import ProjectsPage from "../pages/ProjectsPage";
 import ProjectWorkspacePage from "../pages/ProjectWorkspacePage";
 import ProjectTasksPage from "../pages/ProjectTasksPage";
+import CreateTaskPage from "../pages/CreateTaskPage";
 import TaskDetailPage from "../pages/TaskDetailPage";
 
 import AppLayout from "../layouts/AppLayout";
@@ -77,6 +78,11 @@ const AppRoutes = () => {
                 <Route
                     path="projects/:projectId/tasks"
                     element={<ProjectTasksPage />}
+                />
+
+                <Route
+                    path="projects/:projectId/tasks/new"
+                    element={<CreateTaskPage />}
                 />
 
                 <Route
