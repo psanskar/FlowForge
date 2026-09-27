@@ -137,7 +137,16 @@ const TaskDetailPage = () => {
             </div>
 
             <div className="dashboard-card">
-                <h2>Execution details</h2>
+                <div className="page-header">
+                    <h2>Execution details</h2>
+
+                    <Link
+                        className="primary-button"
+                        to={`/app/tasks/${taskId}/edit`}
+                    >
+                        Edit task
+                    </Link>
+                </div>
 
                 <div>
                     <p>
