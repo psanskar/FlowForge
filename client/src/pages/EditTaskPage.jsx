@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
     Link,
     useNavigate,
@@ -66,17 +66,11 @@ const EditTaskPage = () => {
     const [progress, setProgress] = useState(null);
     const [formError, setFormError] = useState("");
 
-    const initialised =
-        task &&
-        title === null &&
-        description === null &&
-        status === null &&
-        priority === null &&
-        assignee === null &&
-        dueDate === null &&
-        progress === null;
+    useEffect(() => {
+        if (!task || title !== null) {
+            return;
+        }
 
-    if (initialised) {
         setTitle(task.title ?? "");
         setDescription(task.description ?? "");
         setStatus(task.status ?? "todo");
@@ -88,7 +82,7 @@ const EditTaskPage = () => {
         );
         setDueDate(toDateInputValue(task.dueDate));
         setProgress(String(task.progress ?? 0));
-    }
+    }, [task, title]);
 
     const handleSubmit = async (event) => {
         event.preventDefault();
