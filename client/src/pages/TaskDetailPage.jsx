@@ -1,7 +1,8 @@
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 
 import useTask from "../hooks/useTask";
 import useDependencies from "../hooks/useDependencies";
+import useDeleteTask from "../hooks/useDeleteTask";
 
 const formatStatus = (status) => {
     const labels = {
@@ -59,6 +60,7 @@ const formatDateTime = (date) => {
 
 const TaskDetailPage = () => {
     const { taskId } = useParams();
+    const navigate = useNavigate();
 
     const {
         data,
@@ -73,6 +75,26 @@ const TaskDetailPage = () => {
         typeof task?.project === "object"
             ? task.project?._id
             : task?.project;
+
+    const deleteTaskMutation =
+        useDeleteTask(taskId, projectId);
+
+    const handleDelete = async () => {
+        const confirmed = window.confirm(
+            "Delete this task? This action cannot be undone."
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            await deleteTaskMutation.mutateAsync();
+            navigate(`/app/projects/${projectId}/tasks`);
+        } catch {
+            // The mutation error is displayed below.
+        }
+    };
 
     const {
         data: dependencyData,
@@ -140,12 +162,35 @@ const TaskDetailPage = () => {
                 <div className="page-header">
                     <h2>Execution details</h2>
 
-                    <Link
-                        className="primary-button"
-                        to={`/app/tasks/${taskId}/edit`}
-                    >
-                        Edit task
-                    </Link>
+                    <div>
+                        <Link
+                            className="primary-button"
+                            to={`/app/tasks/${taskId}/edit`}
+                        >
+                            Edit task
+                        </Link>
+
+                        <button
+                            type="button"
+                            className="danger-button"
+                            onClick={handleDelete}
+                            disabled={deleteTaskMutation.isPending}
+                        >
+                            {deleteTaskMutation.isPending
+                                ? "Deleting..."
+                                : "Delete task"}
+                        </button>
+                    </div>
+
+                    {deleteTaskMutation.isError && (
+                        <p>
+                            {deleteTaskMutation.error?.code ===
+                            "TASK_HAS_DEPENDENCIES"
+                                ? "This task cannot be deleted because it is used by one or more dependencies. Remove those dependencies first."
+                                : deleteTaskMutation.error?.message ??
+                                  "Unable to delete task."}
+                        </p>
+                    )}
                 </div>
 
                 <div>
