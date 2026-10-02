@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 
 import useTask from "../hooks/useTask";
 import useDependencies from "../hooks/useDependencies";
 import useDeleteTask from "../hooks/useDeleteTask";
+import useCreateDependency from "../hooks/useCreateDependency";
+import useTasks from "../hooks/useTasks";
 
 const formatStatus = (status) => {
     const labels = {
@@ -79,6 +82,24 @@ const TaskDetailPage = () => {
     const deleteTaskMutation =
         useDeleteTask(taskId, projectId);
 
+    const [dependencyTaskId, setDependencyTaskId] =
+        useState("");
+
+    const {
+        data: projectTasksData,
+        isLoading: isProjectTasksLoading
+    } = useTasks(projectId, {
+        page: 1,
+        limit: 100,
+        sort: "createdAt"
+    });
+
+    const projectTasks =
+        projectTasksData?.data?.tasks ?? [];
+
+    const createDependencyMutation =
+        useCreateDependency(projectId);
+
     const handleDelete = async () => {
         const confirmed = window.confirm(
             "Delete this task? This action cannot be undone."
@@ -116,6 +137,41 @@ const TaskDetailPage = () => {
             String(dependency.fromTask?._id) ===
             String(task?._id)
     );
+
+    const existingBlockedByTaskIds = new Set(
+        blockedBy.map((dependency) =>
+            String(dependency.fromTask?._id)
+        )
+    );
+
+    const availableDependencyTasks =
+        projectTasks.filter(
+            (projectTask) =>
+                String(projectTask._id) !==
+                    String(task._id) &&
+                !existingBlockedByTaskIds.has(
+                    String(projectTask._id)
+                )
+        );
+
+    const handleAddDependency = async (event) => {
+        event.preventDefault();
+
+        if (!dependencyTaskId) {
+            return;
+        }
+
+        try {
+            await createDependencyMutation.mutateAsync({
+                fromTask: dependencyTaskId,
+                toTask: taskId
+            });
+
+            setDependencyTaskId("");
+        } catch {
+            // The mutation error is displayed below.
+        }
+    };
 
     if (isLoading) {
         return (
@@ -254,6 +310,98 @@ const TaskDetailPage = () => {
                 {!isDependenciesLoading &&
                     !isDependenciesError && (
                         <div>
+                            <section>
+                                <h3>Add dependency</h3>
+
+                                <p>
+                                    Select a task that must be
+                                    completed before this task.
+                                </p>
+
+                                <form
+                                    onSubmit={
+                                        handleAddDependency
+                                    }
+                                >
+                                    <label htmlFor="dependency-task">
+                                        This task is blocked by
+                                    </label>
+
+                                    <select
+                                        id="dependency-task"
+                                        value={dependencyTaskId}
+                                        onChange={(event) =>
+                                            setDependencyTaskId(
+                                                event.target.value
+                                            )
+                                        }
+                                        disabled={
+                                            isProjectTasksLoading ||
+                                            createDependencyMutation.isPending ||
+                                            availableDependencyTasks.length ===
+                                                0
+                                        }
+                                    >
+                                        <option value="">
+                                            Select a task
+                                        </option>
+
+                                        {availableDependencyTasks.map(
+                                            (projectTask) => (
+                                                <option
+                                                    key={
+                                                        projectTask._id
+                                                    }
+                                                    value={
+                                                        projectTask._id
+                                                    }
+                                                >
+                                                    {
+                                                        projectTask.title
+                                                    }
+                                                </option>
+                                            )
+                                        )}
+                                    </select>
+
+                                    <button
+                                        type="submit"
+                                        className="primary-button"
+                                        disabled={
+                                            !dependencyTaskId ||
+                                            createDependencyMutation.isPending
+                                        }
+                                    >
+                                        {createDependencyMutation.isPending
+                                            ? "Adding..."
+                                            : "Add dependency"}
+                                    </button>
+                                </form>
+
+                                {isProjectTasksLoading && (
+                                    <p>
+                                        Loading project tasks...
+                                    </p>
+                                )}
+
+                                {!isProjectTasksLoading &&
+                                    availableDependencyTasks.length ===
+                                        0 && (
+                                        <p>
+                                            No other project tasks are
+                                            available to add as a
+                                            dependency.
+                                        </p>
+                                    )}
+
+                                {createDependencyMutation.isError && (
+                                    <p>
+                                        {createDependencyMutation.error
+                                            ?.message ??
+                                            "Unable to add dependency."}
+                                    </p>
+                                )}
+                            </section>
                             <section>
                                 <h3>Blocked by</h3>
 
