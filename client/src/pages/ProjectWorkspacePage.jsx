@@ -8,7 +8,7 @@ import useGithubMetrics from "../hooks/useGithubMetrics";
 import useProject from "../hooks/useProject";
 import useProjectDashboard from "../hooks/useProjectDashboard";
 import useHealthTrend from "../hooks/useHealthTrend";
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../context/useAuth";
 
 const formatRiskType = (type) => {
     return type

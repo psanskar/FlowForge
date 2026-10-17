@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
     Link,
     useNavigate,
@@ -57,6 +57,28 @@ const EditTaskPage = () => {
     const members = project?.members ?? [];
 
     const [title, setTitle] = useState(null);
+    const currentTitle = title ?? task?.title ?? "";
+
+    const currentDescription =
+        description ?? task?.description ?? "";
+
+    const currentStatus =
+        status ?? task?.status ?? "todo";
+
+    const currentPriority =
+        priority ?? task?.priority ?? "medium";
+
+    const currentAssignee =
+        assignee ??
+        (typeof task?.assignee === "object"
+            ? task.assignee?._id ?? ""
+            : task?.assignee ?? "");
+
+    const currentDueDate =
+        dueDate ?? toDateInputValue(task?.dueDate);
+
+    const currentProgress =
+        progress ?? String(task?.progress ?? 0);
     const [description, setDescription] =
         useState(null);
     const [status, setStatus] = useState(null);
@@ -66,24 +88,6 @@ const EditTaskPage = () => {
     const [progress, setProgress] = useState(null);
     const [formError, setFormError] = useState("");
 
-    useEffect(() => {
-        if (!task || title !== null) {
-            return;
-        }
-
-        setTitle(task.title ?? "");
-        setDescription(task.description ?? "");
-        setStatus(task.status ?? "todo");
-        setPriority(task.priority ?? "medium");
-        setAssignee(
-            typeof task.assignee === "object"
-                ? task.assignee?._id ?? ""
-                : task.assignee ?? ""
-        );
-        setDueDate(toDateInputValue(task.dueDate));
-        setProgress(String(task.progress ?? 0));
-    }, [task, title]);
-
     const handleSubmit = async (event) => {
         event.preventDefault();
         setFormError("");
@@ -91,13 +95,13 @@ const EditTaskPage = () => {
         try {
             const payload = {
                 version: task.version,
-                title: title.trim(),
-                description: description.trim(),
-                status,
-                priority,
-                progress: Number(progress),
-                assignee: assignee || null,
-                dueDate: dueDate || null
+                title: currentTitle.trim(),
+                description: currentDescription.trim(),
+                status: currentStatus,
+                priority: currentPriority,
+                progress: Number(currentProgress),
+                assignee: currentAssignee || null,
+                dueDate: currentDueDate || null
             };
 
             await updateTask(payload);
