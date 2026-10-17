@@ -58,8 +58,28 @@ const getProject = async (req, res, next) => {
     }
 };
 
+const addProjectMember = async (req, res, next) => {
+    try {
+        const project = await projectService.addProjectMember({
+            projectId: req.params.projectId,
+            requesterId: req.user.id,
+            email: req.body.email
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                project
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     createProject,
     listProjects,
-    getProject
+    getProject,
+    addProjectMember
 };

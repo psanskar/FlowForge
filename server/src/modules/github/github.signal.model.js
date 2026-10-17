@@ -79,6 +79,12 @@ githubSignalSchema.index({
     occurredAt: -1
 });
 
+githubSignalSchema.index({
+    project: 1,
+    type: 1,
+    occurredAt: -1
+});
+
 module.exports = mongoose.model(
     "GithubSignal",
     githubSignalSchema

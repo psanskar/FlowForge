@@ -118,58 +118,75 @@ describe("GitHub client", () => {
         });
     });
 
-    test("maps 403 to GITHUB_RATE_LIMITED", async () => {
-        jest.useFakeTimers();
-
+    test("maps a permission 403 separately from a rate limit", async () => {
         global.fetch = jest.fn().mockResolvedValue({
             ok: false,
-            status: 403
+            status: 403,
+            headers: {
+                get: jest.fn().mockReturnValue(null)
+            }
         });
 
-        const promise = expect(
+        await expect(
             getRepository("owner", "flowforge")
         ).rejects.toMatchObject({
-            statusCode: 503,
-            code: "GITHUB_RATE_LIMITED"
+            statusCode: 403,
+            code: "GITHUB_API_FORBIDDEN"
         });
 
-        await jest.advanceTimersByTimeAsync(1000);
-        await jest.advanceTimersByTimeAsync(2000);
-
-        await promise;
-
-        expect(global.fetch).toHaveBeenCalledTimes(
-            3
-        );
-
-        jest.useRealTimers();
+        expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    test("maps 429 to GITHUB_RATE_LIMITED", async () => {
-        jest.useFakeTimers();
-
+    test("maps a primary 403 rate limit and exposes its reset delay", async () => {
         global.fetch = jest.fn().mockResolvedValue({
             ok: false,
-            status: 429
+            status: 403,
+            headers: {
+                get: jest.fn((name) => {
+                    if (name === "x-ratelimit-remaining") {
+                        return "0";
+                    }
+                    if (name === "x-ratelimit-reset") {
+                        return String(
+                            Math.floor(Date.now() / 1000) + 3600
+                        );
+                    }
+                    return null;
+                })
+            }
         });
 
-        const promise = expect(
+        await expect(
             getRepository("owner", "flowforge")
         ).rejects.toMatchObject({
             statusCode: 503,
-            code: "GITHUB_RATE_LIMITED"
+            code: "GITHUB_RATE_LIMITED",
+            retryAfterMs: expect.any(Number)
         });
 
-        await jest.advanceTimersByTimeAsync(1000);
-        await jest.advanceTimersByTimeAsync(2000);
+        expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
 
-        await promise;
+    test("returns 429 retry guidance without retrying during the request", async () => {
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: false,
+            status: 429,
+            headers: {
+                get: jest.fn((name) =>
+                    name === "retry-after" ? "120" : null
+                )
+            }
+        });
 
-        expect(global.fetch).toHaveBeenCalledTimes(
-            3
-        );
+        await expect(
+            getRepository("owner", "flowforge")
+        ).rejects.toMatchObject({
+            statusCode: 503,
+            code: "GITHUB_RATE_LIMITED",
+            retryAfterMs: 120000
+        });
 
-        jest.useRealTimers();
+        expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     test("maps other GitHub API errors to GITHUB_API_ERROR", async () => {
@@ -198,7 +215,7 @@ describe("GitHub client", () => {
 
         jest.useRealTimers();
     });
-        test("retries a 500 response before succeeding", async () => {
+    test("retries a 500 response before succeeding", async () => {
         jest.useFakeTimers();
 
         global.fetch = jest
@@ -232,96 +249,6 @@ describe("GitHub client", () => {
         expect(result).toEqual({
             id: 123,
             name: "flowforge"
-        });
-
-        jest.useRealTimers();
-    });
-
-    test("retries a 429 response before succeeding", async () => {
-        jest.useFakeTimers();
-
-        global.fetch = jest
-            .fn()
-            .mockResolvedValueOnce({
-                ok: false,
-                status: 429,
-                headers: {
-                    get: jest.fn().mockReturnValue(null)
-                }
-            })
-            .mockResolvedValueOnce({
-                ok: true,
-                status: 200,
-                json: jest.fn().mockResolvedValue({
-                    id: 123,
-                    name: "flowforge"
-                })
-            });
-
-        const promise = getRepository(
-            "owner",
-            "flowforge"
-        );
-
-        await jest.advanceTimersByTimeAsync(1000);
-
-        const result = await promise;
-
-        expect(global.fetch).toHaveBeenCalledTimes(
-            2
-        );
-
-        expect(result).toEqual({
-            id: 123,
-            name: "flowforge"
-        });
-
-        jest.useRealTimers();
-    });
-
-    test("respects Retry-After when GitHub provides it", async () => {
-        jest.useFakeTimers();
-
-        global.fetch = jest
-            .fn()
-            .mockResolvedValueOnce({
-                ok: false,
-                status: 429,
-                headers: {
-                    get: jest
-                        .fn()
-                        .mockReturnValue("2")
-                }
-            })
-            .mockResolvedValueOnce({
-                ok: true,
-                status: 200,
-                json: jest.fn().mockResolvedValue({
-                    id: 123
-                })
-            });
-
-        const promise = getRepository(
-            "owner",
-            "flowforge"
-        );
-
-        await jest.advanceTimersByTimeAsync(1999);
-
-        expect(global.fetch).toHaveBeenCalledTimes(
-            1
-        );
-
-        await jest.advanceTimersByTimeAsync(1);
-
-        const result = await promise;
-
-        expect(global.fetch).toHaveBeenCalledTimes(
-            2
-        );
-
-        expect(result).toEqual({
-            id: 123
         });
 
         jest.useRealTimers();

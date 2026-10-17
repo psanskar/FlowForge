@@ -7,6 +7,12 @@ const Project = require(
 const GithubSignal = require(
     "./github.signal.model"
 );
+const GithubPullRequestState = require(
+    "./github.pullRequestState.model"
+);
+const { ensurePullRequestState } = require(
+    "./github.pullRequestState.service"
+);
 
 const createError = (
     statusCode,
@@ -349,6 +355,91 @@ const calculatePullRequestMetrics = ({
     };
 };
 
+const calculateAggregatedPullRequestMetrics = ({
+    rangeCounts,
+    pullRequests,
+    openPullRequests,
+    mergeSignals,
+    now
+}) => {
+    const countsByType = new Map(
+        rangeCounts.map(({ _id, count }) => [
+            _id,
+            count
+        ])
+    );
+
+    const pullRequestsByGithubId = new Map(
+        pullRequests.map((pullRequest) => [
+            pullRequest._id,
+            pullRequest
+        ])
+    );
+
+    const cycleTimes = [];
+
+    for (const mergeSignal of mergeSignals) {
+        const githubId = getGithubId(mergeSignal);
+
+        if (githubId === null) {
+            continue;
+        }
+
+        const pullRequest =
+            pullRequestsByGithubId.get(String(githubId));
+
+        if (!pullRequest?.firstOpenedAt) {
+            continue;
+        }
+
+        const cycleTimeHours = getHoursBetween(
+            pullRequest.firstOpenedAt,
+            mergeSignal.occurredAt
+        );
+
+        if (cycleTimeHours >= 0) {
+            cycleTimes.push(cycleTimeHours);
+        }
+    }
+
+    const averageCycleTimeHours =
+        cycleTimes.length > 0
+            ? cycleTimes.reduce(
+                  (total, value) => total + value,
+                  0
+              ) / cycleTimes.length
+            : null;
+
+    const oldestOpenPrAgeHours =
+        openPullRequests.length > 0
+            ? openPullRequests.reduce(
+                  (oldestAge, pullRequest) =>
+                      Math.max(
+                          oldestAge,
+                          getHoursBetween(
+                              pullRequest.latestEvent.occurredAt,
+                              now
+                          )
+                      ),
+                  0
+              )
+            : null;
+
+    return {
+        opened:
+            countsByType.get("PULL_REQUEST_OPENED") || 0,
+        merged:
+            countsByType.get("PULL_REQUEST_MERGED") || 0,
+        open: openPullRequests.length,
+        averageCycleTimeHours:
+            roundMetric(averageCycleTimeHours),
+        medianCycleTimeHours:
+            roundMetric(calculateMedian(cycleTimes)),
+        oldestOpenPrAgeHours:
+            roundMetric(oldestOpenPrAgeHours)
+    };
+};
+
 const calculateIssueMetrics = ({
     signals,
     rangeStart
@@ -443,28 +534,66 @@ const getGithubExecutionMetrics = async ({
                     1000
         );
 
-    const lifecycleSignals =
-        await GithubSignal.find({
+    const projectObjectId =
+        new mongoose.Types.ObjectId(projectId);
+
+    await ensurePullRequestState(projectObjectId);
+
+    const [
+        rangeCounts,
+        mergeSignals,
+        openPullRequestStates,
+        rangeSignals
+    ] = await Promise.all([
+        GithubSignal.aggregate([
+            {
+                $match: {
+                    project: projectObjectId,
+                    type: {
+                        $in: [
+                            "PULL_REQUEST_OPENED",
+                            "PULL_REQUEST_MERGED"
+                        ]
+                    },
+                    occurredAt: {
+                        $gte: rangeStart
+                    }
+                }
+            },
+            {
+                $group: {
+                    _id: "$type",
+                    count: { $sum: 1 }
+                }
+            }
+        ]),
+        GithubSignal.find({
             project: projectId,
-            type: {
-                $in: [
-                    "PULL_REQUEST_OPENED",
-                    "PULL_REQUEST_MERGED",
-                    "PULL_REQUEST_CLOSED"
-                ]
+            type: "PULL_REQUEST_MERGED",
+            occurredAt: {
+                $gte: rangeStart
             }
         })
             .select(
                 "type occurredAt metadata"
             )
-            .sort({
-                occurredAt: 1,
-                _id: 1
-            })
-            .lean();
-
-    const rangeSignals =
-        await GithubSignal.find({
+            .lean(),
+        GithubPullRequestState.find({
+            project: projectObjectId,
+            latestEventType: "PULL_REQUEST_OPENED"
+        })
+            .select("githubId latestEventAt")
+            .lean()
+            .then((states) =>
+                states.map((state) => ({
+                    _id: state.githubId,
+                    latestEvent: {
+                        type: "PULL_REQUEST_OPENED",
+                        occurredAt: state.latestEventAt
+                    }
+                }))
+            ),
+        GithubSignal.find({
             project: projectId,
             occurredAt: {
                 $gte: rangeStart,
@@ -481,12 +610,63 @@ const getGithubExecutionMetrics = async ({
             .select(
                 "type occurredAt metadata"
             )
-            .lean();
+            .lean()
+    ]);
+
+    const mergedPullRequestIds = [
+        ...new Set(
+            mergeSignals
+                .map(getGithubId)
+                .filter((githubId) => githubId !== null)
+                .map(String)
+        )
+    ];
+
+    const mergedPullRequestStates =
+        mergedPullRequestIds.length > 0
+            ? await GithubPullRequestState.find({
+                  project: projectObjectId,
+                  githubId: {
+                      $in: mergedPullRequestIds
+                  }
+              })
+                  .select(
+                      "githubId firstOpenedAt latestEventAt latestEventType"
+                  )
+                  .lean()
+                  .then((states) =>
+                      states.map((state) => ({
+                          _id: state.githubId,
+                          firstOpenedAt: state.firstOpenedAt,
+                          latestEvent: {
+                              type: state.latestEventType,
+                              occurredAt: state.latestEventAt
+                          }
+                      }))
+                  )
+            : [];
+
+    const pullRequestsByGithubId = new Map(
+        mergedPullRequestStates.map((state) => [
+            state._id,
+            state
+        ])
+    );
+    for (const state of openPullRequestStates) {
+        if (!pullRequestsByGithubId.has(state._id)) {
+            pullRequestsByGithubId.set(state._id, state);
+        }
+    }
 
     const pullRequests =
-        calculatePullRequestMetrics({
-            lifecycleSignals,
-            rangeStart,
+        calculateAggregatedPullRequestMetrics({
+            rangeCounts,
+            pullRequests: Array.from(
+                pullRequestsByGithubId.values()
+            ),
+            openPullRequests:
+                openPullRequestStates,
+            mergeSignals,
             now
         });
 

@@ -53,7 +53,7 @@ const EditTaskPage = () => {
         isPending
     } = useUpdateTask(taskId);
 
-    const project = projectData?.data ?? null;
+    const project = projectData?.data?.project ?? null;
     const members = project?.members ?? [];
 
     const [title, setTitle] = useState(null);

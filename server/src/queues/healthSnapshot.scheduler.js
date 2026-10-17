@@ -2,7 +2,7 @@ const Project =
     require("../modules/projects/project.model");
 
 const {
-    healthSnapshotQueue,
+    healthSnapshotDispatchQueue,
     enqueueHealthSnapshot
 } = require("./healthSnapshot.queue");
 
@@ -78,7 +78,7 @@ const dispatchHealthSnapshots = async ({
 
 const startHealthSnapshotScheduler =
     async () => {
-        await healthSnapshotQueue.upsertJobScheduler(
+        await healthSnapshotDispatchQueue.upsertJobScheduler(
             "daily-health-snapshot-dispatch",
             {
                 pattern: "0 0 0 * * *",
@@ -111,7 +111,7 @@ const startHealthSnapshotScheduler =
 
 const closeHealthSnapshotScheduler =
     async () => {
-        await healthSnapshotQueue.close();
+        await healthSnapshotDispatchQueue.close();
     };
 
 module.exports = {

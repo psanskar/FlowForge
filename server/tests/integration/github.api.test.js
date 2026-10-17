@@ -236,6 +236,31 @@ describe("GitHub API", () => {
         );
     });
 
+    test("returns retry guidance when GitHub rate limits repository connection", async () => {
+        const error = new Error(
+            "GitHub API rate limit reached"
+        );
+        error.statusCode = 503;
+        error.code = "GITHUB_RATE_LIMITED";
+        error.retryAfterMs = 60000;
+        githubClient.getRepository.mockRejectedValue(error);
+
+        const response = await request(app)
+            .post(`/api/v1/projects/${projectId}/github`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                owner: "test-owner",
+                repo: "flowforge-test"
+            });
+
+        expect(response.status).toBe(503);
+        expect(response.headers["retry-after"]).toBe("60");
+        expect(response.body.error).toMatchObject({
+            code: "GITHUB_RATE_LIMITED",
+            details: { retryAfterMs: 60000 }
+        });
+    });
+
     test("rejects a project the authenticated user cannot access", async () => {
         const otherUserResponse = await request(app)
             .post("/api/v1/auth/register")

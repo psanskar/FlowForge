@@ -1,4 +1,5 @@
 const request = require("supertest");
+const crypto = require("crypto");
 
 const mongoose = require("mongoose");
 
@@ -108,7 +109,8 @@ describe(
 
         const sendWebhook = async ({
             payload,
-            deliveryId
+            deliveryId,
+            event = "issues"
         }) => {
             const signature =
                 createWebhookSignature(
@@ -120,10 +122,7 @@ describe(
                 .post(
                     "/api/v1/github/webhook"
                 )
-                .set(
-                    "X-GitHub-Event",
-                    "issues"
-                )
+                .set("X-GitHub-Event", event)
                 .set(
                     "X-GitHub-Delivery",
                     deliveryId
@@ -138,6 +137,57 @@ describe(
                 )
                 .send(payload);
         };
+
+        test(
+            "rejects reuse of a delivery ID for a different event",
+            async () => {
+                const payload = createIssuePayload();
+                await GithubWebhookDelivery.create({
+                    deliveryId: idempotentDeliveryId,
+                    event: "issues",
+                    status: "PROCESSED",
+                    processedAt: new Date()
+                });
+
+                const response = await sendWebhook({
+                    payload,
+                    deliveryId: idempotentDeliveryId,
+                    event: "pull_request"
+                });
+
+                expect(response.status).toBe(409);
+                expect(response.body.error.code).toBe(
+                    "GITHUB_WEBHOOK_DELIVERY_CONFLICT"
+                );
+            }
+        );
+
+        test(
+            "rejects reuse of a delivery ID with a changed payload",
+            async () => {
+                const originalPayload = createIssuePayload();
+                await GithubWebhookDelivery.create({
+                    deliveryId: idempotentDeliveryId,
+                    event: "issues",
+                    payloadHash: crypto
+                        .createHash("sha256")
+                        .update(originalPayload)
+                        .digest("hex"),
+                    status: "PROCESSED",
+                    processedAt: new Date()
+                });
+
+                const response = await sendWebhook({
+                    payload: createIssuePayload(98766),
+                    deliveryId: idempotentDeliveryId
+                });
+
+                expect(response.status).toBe(409);
+                expect(response.body.error.code).toBe(
+                    "GITHUB_WEBHOOK_DELIVERY_CONFLICT"
+                );
+            }
+        );
 
         test(
             "does not process the same delivery twice",

@@ -7,6 +7,12 @@ const Milestone = require("../milestones/milestone.model");
 const GithubSignal = require(
     "../github/github.signal.model"
 );
+const GithubPullRequestState = require(
+    "../github/github.pullRequestState.model"
+);
+const { ensurePullRequestState } = require(
+    "../github/github.pullRequestState.service"
+);
 
 const { analyzeProject } = require("./risk.engine");
 
@@ -49,7 +55,11 @@ const getProjectForMember = async (
     return project;
 };
 
-const loadProjectRiskData = async (projectId, userId) => {
+const loadProjectRiskData = async (
+    projectId,
+    userId,
+    now = new Date()
+) => {
     if (!mongoose.isValidObjectId(projectId)) {
         throw createError(
             400,
@@ -58,7 +68,11 @@ const loadProjectRiskData = async (projectId, userId) => {
         );
     }
 
-    const project = await Project.findById(projectId);
+    const project = await Project.findById(projectId)
+        .select(
+            "_id name description status startDate targetDate members.user"
+        )
+        .lean();
 
     if (!project) {
         throw createError(
@@ -82,35 +96,98 @@ const loadProjectRiskData = async (projectId, userId) => {
         );
     }
 
+    await ensurePullRequestState(project._id);
+
+    const githubAnalysisStart = new Date(
+        now.getTime() - 14 * 24 * 60 * 60 * 1000
+    );
+
     const [
         tasks,
         dependencies,
         milestones,
-        githubSignals
+        githubSignals,
+        githubPullRequestStates
     ] = await Promise.all([
         Task.find({
             project: projectId
-        }).lean(),
+        })
+            .select(
+                "_id status priority dueDate lastActivityAt milestone assignee"
+            )
+            .lean(),
 
         Dependency.find({
             project: projectId
-        }).lean(),
+        })
+            .select("fromTask toTask")
+            .lean(),
 
         Milestone.find({
             project: projectId
-        }).lean(),
+        })
+            .select("_id dueDate status")
+            .lean(),
 
         GithubSignal.find({
-            project: projectId
-        }).lean()
+            project: projectId,
+            type: {
+                $in: [
+                    "PULL_REQUEST_OPENED",
+                    "PULL_REQUEST_MERGED",
+                    "ISSUE_OPENED",
+                    "ISSUE_CLOSED"
+                ]
+            },
+            occurredAt: {
+                $gte: githubAnalysisStart,
+                $lte: now
+            }
+        })
+            .select("type externalId occurredAt metadata")
+            .lean(),
+
+        GithubPullRequestState.find({
+            project: projectId,
+            latestEventType: {
+                $in: [
+                    "PULL_REQUEST_OPENED",
+                    "PULL_REQUEST_MERGED"
+                ]
+            }
+        })
+            .select(
+                "githubId lastOpenedAt latestEventAt latestEventType latestEventMetadata"
+            )
+            .lean()
     ]);
+
+    const githubPullRequestCycleTimes =
+        githubPullRequestStates
+            .filter(
+                (pullRequest) =>
+                    pullRequest.latestEventType ===
+                        "PULL_REQUEST_MERGED" &&
+                    pullRequest.lastOpenedAt &&
+                    pullRequest.latestEventAt <= now
+            )
+            .map((pullRequest) =>
+                (
+                    pullRequest.latestEventAt.getTime() -
+                    pullRequest.lastOpenedAt.getTime()
+                ) /
+                (1000 * 60 * 60)
+            )
+            .filter((cycleTime) => cycleTime >= 0);
 
     return {
         project,
         tasks,
         dependencies,
         milestones,
-        githubSignals
+        githubSignals,
+        githubPullRequestStates,
+        githubPullRequestCycleTimes
     };
 };
 
@@ -124,10 +201,13 @@ const getProjectRisks = async (
         tasks,
         dependencies,
         milestones,
-        githubSignals
+        githubSignals,
+        githubPullRequestStates,
+        githubPullRequestCycleTimes
     } = await loadProjectRiskData(
         projectId,
-        userId
+        userId,
+        now
     );
 
     return analyzeProject({
@@ -136,6 +216,8 @@ const getProjectRisks = async (
         dependencies,
         milestones,
         githubSignals,
+        githubPullRequestStates,
+        githubPullRequestCycleTimes,
         now
     });
 };

@@ -107,7 +107,30 @@ const validateProjectListQuery = (req, res, next) => {
     next();
 };
 
+const validateAddProjectMember = (req, res, next) => {
+    const { email } = req.body;
+
+    if (
+        typeof email !== "string" ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+    ) {
+        return res.status(422).json({
+            success: false,
+            error: {
+                code: "VALIDATION_ERROR",
+                message: "Request validation failed",
+                details: {
+                    email: "A valid email address is required"
+                }
+            }
+        });
+    }
+
+    next();
+};
+
 module.exports = {
     validateCreateProject,
-    validateProjectListQuery
+    validateProjectListQuery,
+    validateAddProjectMember
 };

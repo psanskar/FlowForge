@@ -10,6 +10,7 @@ import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import OverviewPage from "../pages/OverviewPage";
 import ProjectsPage from "../pages/ProjectsPage";
+import CreateProjectPage from "../pages/CreateProjectPage";
 import ProjectWorkspacePage from "../pages/ProjectWorkspacePage";
 import ProjectTasksPage from "../pages/ProjectTasksPage";
 import CreateTaskPage from "../pages/CreateTaskPage";
@@ -69,6 +70,11 @@ const AppRoutes = () => {
                 <Route
                     path="projects"
                     element={<ProjectsPage />}
+                />
+
+                <Route
+                    path="projects/new"
+                    element={<CreateProjectPage />}
                 />
 
                 <Route

@@ -42,6 +42,11 @@ const githubRepositorySchema = new mongoose.Schema(
         private: {
             type: Boolean,
             required: true
+        },
+
+        pullRequestStateVersion: {
+            type: Number,
+            default: 0
         }
     },
     {

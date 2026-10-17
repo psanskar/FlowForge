@@ -2,7 +2,8 @@ import { useState } from "react";
 import {
     Link,
     useNavigate,
-    useParams
+    useParams,
+    useSearchParams
 } from "react-router-dom";
 
 import useTasks from "../hooks/useTasks";
@@ -48,11 +49,14 @@ const formatDate = (date) => {
 const ProjectTasksPage = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [page, setPage] = useState(1);
     const [status, setStatus] = useState("");
     const [priority, setPriority] = useState("");
-    const [assignee, setAssignee] = useState("");
+    const [assignee, setAssignee] = useState(
+        () => searchParams.get("assignee") ?? ""
+    );
     const [sort, setSort] = useState("dueDate");
 
     const {
@@ -81,7 +85,7 @@ const ProjectTasksPage = () => {
         data?.data?.pagination ?? null;
 
     const project =
-        projectData?.data ?? null;
+        projectData?.data?.project ?? null;
 
     const members = project?.members ?? [];
 
@@ -96,8 +100,20 @@ const ProjectTasksPage = () => {
     };
 
     const handleAssigneeChange = (event) => {
-        setAssignee(event.target.value);
+        const nextAssignee = event.target.value;
+        setAssignee(nextAssignee);
         setPage(1);
+        setSearchParams((currentParams) => {
+            const nextParams = new URLSearchParams(currentParams);
+
+            if (nextAssignee) {
+                nextParams.set("assignee", nextAssignee);
+            } else {
+                nextParams.delete("assignee");
+            }
+
+            return nextParams;
+        }, { replace: true });
     };
 
     const handleSortChange = (event) => {
@@ -111,6 +127,7 @@ const ProjectTasksPage = () => {
         setAssignee("");
         setSort("dueDate");
         setPage(1);
+        setSearchParams({}, { replace: true });
     };
 
     const handlePreviousPage = () => {
@@ -160,15 +177,26 @@ const ProjectTasksPage = () => {
         <main className="page-container">
             <div className="page-header">
                 <div>
-                    <h1>Project Tasks</h1>
-
+                    <span className="page-eyebrow">
+                        {project?.name || "Project"} / Tasks
+                    </span>
+                    <h1>Project tasks</h1>
                     <p>
-                        View and monitor tasks for
-                        this project.
+                        Find the work that needs attention and see who owns it.
                     </p>
                 </div>
 
-                <div>
+                <div className="task-page-actions">
+                    <Link
+                        className="secondary-button"
+                        to={`/app/projects/${projectId}`}
+                    >
+                        Workspace
+                    </Link>
+                    <span className="task-total-count">
+                        <strong>{pagination?.total ?? 0}</strong>
+                        <span>tasks</span>
+                    </span>
                     <button
                         type="button"
                         className="primary-button"
@@ -180,19 +208,10 @@ const ProjectTasksPage = () => {
                     >
                         Create task
                     </button>
-
-                    <strong>
-                        {pagination?.total ?? 0}
-                    </strong>
-
-                    <span>
-                        {" "}
-                        total tasks
-                    </span>
                 </div>
             </div>
 
-            <div className="dashboard-card">
+            <div className="dashboard-card task-filter-card">
                 <div className="task-filters">
                     <div>
                         <label htmlFor="task-status">
@@ -343,9 +362,18 @@ const ProjectTasksPage = () => {
                     </p>
                 </div>
             ) : (
-                <div className="dashboard-card">
+                <div className="dashboard-card task-results-card">
                     <div className="task-list">
-                        {tasks.map((task) => (
+                        {tasks.map((task) => {
+                            const assigneeId =
+                                task.assignee?._id ?? task.assignee;
+                            const assigneeName = members.find(
+                                (member) =>
+                                    String(member.user?._id ?? member.user) ===
+                                    String(assigneeId)
+                            )?.user?.name;
+
+                            return (
                             <article
                                 className="task-list-item"
                                 key={task._id}
@@ -369,23 +397,23 @@ const ProjectTasksPage = () => {
                                 </div>
 
                                 <div className="task-list-meta">
-                                    <span>
-                                        Status:{" "}
-                                        {formatStatus(
-                                            task.status
-                                        )}
+                                    <span className={`task-status-chip task-status-chip--${task.status}`}>
+                                        {formatStatus(task.status)}
                                     </span>
 
-                                    <span>
-                                        Priority:{" "}
-                                        {formatPriority(
-                                            task.priority
-                                        )}
+                                    <span className={`task-priority-chip task-priority-chip--${task.priority}`}>
+                                        {formatPriority(task.priority)} priority
                                     </span>
 
                                     <span>
                                         Progress:{" "}
                                         {task.progress ?? 0}%
+                                    </span>
+
+                                    <span>
+                                        {assigneeName
+                                            ? `Assigned to ${assigneeName}`
+                                            : "Unassigned"}
                                     </span>
 
                                     <span>
@@ -396,7 +424,8 @@ const ProjectTasksPage = () => {
                                     </span>
                                 </div>
                             </article>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             )}

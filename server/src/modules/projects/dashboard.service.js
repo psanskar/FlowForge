@@ -19,10 +19,13 @@ const getProjectDashboard = async (
         tasks,
         dependencies,
         milestones,
-        githubSignals
+        githubSignals,
+        githubPullRequestStates,
+        githubPullRequestCycleTimes
     } = await loadProjectRiskData(
         projectId,
-        userId
+        userId,
+        now
     );
 
     const loadEnd = performance.now();
@@ -35,6 +38,8 @@ const getProjectDashboard = async (
         dependencies,
         milestones,
         githubSignals,
+        githubPullRequestStates,
+        githubPullRequestCycleTimes,
         now
     });
 

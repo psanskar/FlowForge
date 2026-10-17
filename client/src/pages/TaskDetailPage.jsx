@@ -5,6 +5,7 @@ import useTask from "../hooks/useTask";
 import useDependencies from "../hooks/useDependencies";
 import useDeleteTask from "../hooks/useDeleteTask";
 import useCreateDependency from "../hooks/useCreateDependency";
+import useDeleteDependency from "../hooks/useDeleteDependency";
 import useTasks from "../hooks/useTasks";
 
 const formatStatus = (status) => {
@@ -100,6 +101,9 @@ const TaskDetailPage = () => {
     const createDependencyMutation =
         useCreateDependency(projectId);
 
+    const deleteDependencyMutation =
+        useDeleteDependency(projectId);
+
     const handleDelete = async () => {
         const confirmed = window.confirm(
             "Delete this task? This action cannot be undone."
@@ -173,6 +177,24 @@ const TaskDetailPage = () => {
         }
     };
 
+    const handleDeleteDependency = async (dependencyId) => {
+        const confirmed = window.confirm(
+            "Remove this dependency?"
+        );
+
+        if (!confirmed) {
+            return;
+        }
+
+        try {
+            await deleteDependencyMutation.mutateAsync(
+                dependencyId
+            );
+        } catch {
+            // The mutation error is displayed below.
+        }
+    };
+
     if (isLoading) {
         return (
             <main className="page-container">
@@ -199,26 +221,26 @@ const TaskDetailPage = () => {
     }
 
     return (
-        <main className="page-container">
-            <div className="page-header">
+        <main className="page-container task-detail-page">
+            <div className="page-header task-detail-header">
                 <div>
-                    <p>Task</p>
-
+                    <span className="page-eyebrow">Task details</span>
                     <h1>{task.title}</h1>
                 </div>
 
                 <Link
+                    className="secondary-button"
                     to={`/app/projects/${projectId}/tasks`}
                 >
-                    Back to tasks
+                    ← Back to tasks
                 </Link>
             </div>
 
-            <div className="dashboard-card">
-                <div className="page-header">
+            <section className="dashboard-card task-detail-card">
+                <div className="task-detail-summary-header">
                     <h2>Execution details</h2>
 
-                    <div>
+                    <div className="task-detail-actions">
                         <Link
                             className="primary-button"
                             to={`/app/tasks/${taskId}/edit`}
@@ -237,64 +259,64 @@ const TaskDetailPage = () => {
                                 : "Delete task"}
                         </button>
                     </div>
-
-                    {deleteTaskMutation.isError && (
-                        <p>
-                            {deleteTaskMutation.error?.code ===
-                            "TASK_HAS_DEPENDENCIES"
-                                ? "This task cannot be deleted because it is used by one or more dependencies. Remove those dependencies first."
-                                : deleteTaskMutation.error?.message ??
-                                  "Unable to delete task."}
-                        </p>
-                    )}
                 </div>
 
-                <div>
-                    <p>
-                        <strong>Status:</strong>{" "}
-                        {formatStatus(task.status)}
+                {deleteTaskMutation.isError && (
+                    <p className="task-inline-error" role="alert">
+                        {deleteTaskMutation.error?.code ===
+                        "TASK_HAS_DEPENDENCIES"
+                            ? "This task cannot be deleted because it is used by one or more dependencies. Remove those dependencies first."
+                            : deleteTaskMutation.error?.message ??
+                              "Unable to delete task."}
                     </p>
+                )}
 
-                    <p>
-                        <strong>Priority:</strong>{" "}
-                        {formatPriority(task.priority)}
-                    </p>
-
-                    <p>
-                        <strong>Progress:</strong>{" "}
-                        {task.progress ?? 0}%
-                    </p>
-
-                    <p>
-                        <strong>Due date:</strong>{" "}
-                        {formatDate(task.dueDate)}
-                    </p>
-
-                    <p>
-                        <strong>Assignee:</strong>{" "}
-                        {task.assignee?.name ??
-                            task.assignee ??
-                            "Unassigned"}
-                    </p>
-
-                    <p>
-                        <strong>Milestone:</strong>{" "}
-                        {task.milestone?.name ??
-                            task.milestone ??
-                            "No milestone"}
-                    </p>
+                <div className="task-metadata-grid">
+                    <div className="task-metadata-item">
+                        <span>Status</span>
+                        <strong>{formatStatus(task.status)}</strong>
+                    </div>
+                    <div className="task-metadata-item">
+                        <span>Priority</span>
+                        <strong>{formatPriority(task.priority)}</strong>
+                    </div>
+                    <div className="task-metadata-item">
+                        <span>Progress</span>
+                        <strong>{task.progress ?? 0}%</strong>
+                    </div>
+                    <div className="task-metadata-item">
+                        <span>Due date</span>
+                        <strong>{formatDate(task.dueDate)}</strong>
+                    </div>
+                    <div className="task-metadata-item">
+                        <span>Assignee</span>
+                        <strong>
+                            {task.assignee?.name ??
+                                task.assignee ??
+                                "Unassigned"}
+                        </strong>
+                    </div>
+                    <div className="task-metadata-item">
+                        <span>Milestone</span>
+                        <strong>
+                            {task.milestone?.name ??
+                                task.milestone ??
+                                "No milestone"}
+                        </strong>
+                    </div>
                 </div>
-            </div>
+            </section>
 
             {task.description && (
-                <div className="dashboard-card">
+                <section className="dashboard-card task-detail-card">
                     <h2>Description</h2>
-
-                    <p>{task.description}</p>
-                </div>
+                    <p className="task-detail-description">
+                        {task.description}
+                    </p>
+                </section>
             )}
 
-            <div className="dashboard-card">
+            <section className="dashboard-card task-detail-card">
                 <h2>Dependencies</h2>
 
                 {isDependenciesLoading && (
@@ -309,7 +331,7 @@ const TaskDetailPage = () => {
 
                 {!isDependenciesLoading &&
                     !isDependenciesError && (
-                        <div>
+                        <div className="task-dependency-grid">
                             <section>
                                 <h3>Add dependency</h3>
 
@@ -401,6 +423,14 @@ const TaskDetailPage = () => {
                                             "Unable to add dependency."}
                                     </p>
                                 )}
+
+                                {deleteDependencyMutation.isError && (
+                                    <p>
+                                        {deleteDependencyMutation.error
+                                            ?.message ??
+                                            "Unable to remove dependency."}
+                                    </p>
+                                )}
                             </section>
                             <section>
                                 <h3>Blocked by</h3>
@@ -415,19 +445,30 @@ const TaskDetailPage = () => {
                                         {blockedBy.map(
                                             (dependency) => (
                                                 <li
-                                                    key={
-                                                        dependency._id
-                                                    }
+                                                    key={dependency._id}
                                                 >
                                                     <Link
-                                                        to={`/app/projects/${projectId}/tasks/${dependency.fromTask._id}`}
+                                                        to={`/app/tasks/${dependency.fromTask._id}`}
                                                     >
-                                                        {
-                                                            dependency
-                                                                .fromTask
-                                                                .title
-                                                        }
+                                                        {dependency.fromTask.title}
                                                     </Link>
+
+                                                    <button
+                                                        type="button"
+                                                        className="danger-button"
+                                                        onClick={() =>
+                                                            handleDeleteDependency(
+                                                                dependency._id
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            deleteDependencyMutation.isPending
+                                                        }
+                                                    >
+                                                        {deleteDependencyMutation.isPending
+                                                            ? "Removing..."
+                                                            : "Remove"}
+                                                    </button>
                                                 </li>
                                             )
                                         )}
@@ -449,19 +490,30 @@ const TaskDetailPage = () => {
                                         {blocking.map(
                                             (dependency) => (
                                                 <li
-                                                    key={
-                                                        dependency._id
-                                                    }
+                                                    key={dependency._id}
                                                 >
                                                     <Link
-                                                        to={`/app/projects/${projectId}/tasks/${dependency.toTask._id}`}
+                                                        to={`/app/tasks/${dependency.toTask._id}`}
                                                     >
-                                                        {
-                                                            dependency
-                                                                .toTask
-                                                                .title
-                                                        }
+                                                        {dependency.toTask.title}
                                                     </Link>
+
+                                                    <button
+                                                        type="button"
+                                                        className="danger-button"
+                                                        onClick={() =>
+                                                            handleDeleteDependency(
+                                                                dependency._id
+                                                            )
+                                                        }
+                                                        disabled={
+                                                            deleteDependencyMutation.isPending
+                                                        }
+                                                    >
+                                                        {deleteDependencyMutation.isPending
+                                                            ? "Removing..."
+                                                            : "Remove"}
+                                                    </button>
                                                 </li>
                                             )
                                         )}
@@ -470,31 +522,29 @@ const TaskDetailPage = () => {
                             </section>
                         </div>
                     )}
-            </div>
+            </section>
 
-            <div className="dashboard-card">
+            <section className="dashboard-card task-detail-card">
                 <h2>Activity</h2>
-
-                <p>
-                    <strong>Created:</strong>{" "}
-                    {formatDateTime(task.createdAt)}
-                </p>
-
-                <p>
-                    <strong>Last updated:</strong>{" "}
-                    {formatDateTime(task.updatedAt)}
-                </p>
-
-                <p>
-                    <strong>Last activity:</strong>{" "}
-                    {formatDateTime(task.lastActivityAt)}
-                </p>
-
-                <p>
-                    <strong>Version:</strong>{" "}
-                    {task.version ?? 0}
-                </p>
-            </div>
+                <dl className="task-activity-list">
+                    <div>
+                        <dt>Created</dt>
+                        <dd>{formatDateTime(task.createdAt)}</dd>
+                    </div>
+                    <div>
+                        <dt>Last updated</dt>
+                        <dd>{formatDateTime(task.updatedAt)}</dd>
+                    </div>
+                    <div>
+                        <dt>Last activity</dt>
+                        <dd>{formatDateTime(task.lastActivityAt)}</dd>
+                    </div>
+                    <div>
+                        <dt>Version</dt>
+                        <dd>{task.version ?? 0}</dd>
+                    </div>
+                </dl>
+            </section>
         </main>
     );
 };

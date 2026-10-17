@@ -75,7 +75,7 @@ const listMilestones = async (
     const project = await Project.findOne({
         _id: projectId,
         "members.user": userId
-    }).select("_id");
+    }).select("_id").lean();
 
     if (!project) {
         const error = new Error("Project not found");

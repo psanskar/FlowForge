@@ -144,6 +144,43 @@ describe(
             }
         );
 
+        test(
+            "normalizes a reopened pull request as a new open lifecycle signal",
+            () => {
+                const payload = {
+                    repository: {
+                        id: 123
+                    },
+                    pull_request: {
+                        id: 999,
+                        number: 17,
+                        title: "Reopen dashboard work",
+                        state: "open",
+                        created_at:
+                            "2026-09-17T10:00:00Z",
+                        updated_at:
+                            "2026-09-18T10:00:00Z"
+                    }
+                };
+
+                const result =
+                    normalizeWebhookPullRequest(
+                        payload,
+                        "reopened"
+                    );
+
+                expect(result.type).toBe(
+                    "PULL_REQUEST_OPENED"
+                );
+                expect(result.externalId).toBe(
+                    "pr:999:reopened"
+                );
+                expect(result.occurredAt).toBe(
+                    "2026-09-18T10:00:00Z"
+                );
+            }
+        );
+
 
         test(
             "normalizes merged pull request",

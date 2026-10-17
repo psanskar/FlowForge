@@ -11,6 +11,9 @@ const GithubRepository = require(
 const GithubSignal = require(
     "./github.signal.model"
 );
+const githubPullRequestStateService = require(
+    "./github.pullRequestState.service"
+);
 
 const createError = (
     statusCode,
@@ -88,9 +91,15 @@ const persistSignal = async (
     };
 
     try {
-        return await GithubSignal.create(
+        const createdSignal = await GithubSignal.create(
             normalizedSignal
         );
+
+        await githubPullRequestStateService.updatePullRequestState(
+            createdSignal
+        );
+
+        return createdSignal;
     } catch (error) {
         if (
             error.code === 11000
@@ -106,6 +115,9 @@ const persistSignal = async (
             if (
                 existingSignal
             ) {
+                await githubPullRequestStateService.updatePullRequestState(
+                    existingSignal
+                );
                 return existingSignal;
             }
         }

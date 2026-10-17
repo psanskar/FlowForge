@@ -19,6 +19,9 @@ const GithubRepository = require(
 const GithubSignal = require(
     "../../src/modules/github/github.signal.model"
 );
+const GithubPullRequestState = require(
+    "../../src/modules/github/github.pullRequestState.model"
+);
 
 describe(
     "GitHub Metrics API",
@@ -34,6 +37,7 @@ describe(
                 await Project.deleteMany({});
                 await GithubRepository.deleteMany({});
                 await GithubSignal.deleteMany({});
+                await GithubPullRequestState.deleteMany({});
 
                 const registerResponse =
                     await request(app)
@@ -122,6 +126,12 @@ describe(
             }
         );
 
+        const daysAgo = (days) =>
+            new Date(
+                Date.now() -
+                    days * 24 * 60 * 60 * 1000
+            ).toISOString();
+
         const createSignal = async ({
             type,
             externalId,
@@ -155,7 +165,7 @@ describe(
                     externalId:
                         "pr:101:opened",
                     occurredAt:
-                        "2026-09-01T10:00:00.000Z",
+                        daysAgo(20),
                     githubId:
                         101
                 });
@@ -166,7 +176,7 @@ describe(
                     externalId:
                         "pr:101:merged",
                     occurredAt:
-                        "2026-09-02T10:00:00.000Z",
+                        daysAgo(19),
                     githubId:
                         101
                 });
@@ -177,7 +187,7 @@ describe(
                     externalId:
                         "pr:102:opened",
                     occurredAt:
-                        "2026-09-10T10:00:00.000Z",
+                        daysAgo(10),
                     githubId:
                         102
                 });
@@ -188,7 +198,7 @@ describe(
                     externalId:
                         "issue:201:opened",
                     occurredAt:
-                        "2026-09-05T10:00:00.000Z",
+                        daysAgo(15),
                     githubId:
                         201
                 });
@@ -199,7 +209,7 @@ describe(
                     externalId:
                         "issue:202:closed",
                     occurredAt:
-                        "2026-09-06T10:00:00.000Z",
+                        daysAgo(14),
                     githubId:
                         202
                 });
@@ -210,7 +220,7 @@ describe(
                     externalId:
                         "commit:abc123",
                     occurredAt:
-                        "2026-09-07T10:00:00.000Z"
+                        daysAgo(13)
                 });
 
                 await createSignal({
@@ -219,7 +229,7 @@ describe(
                     externalId:
                         "commit:def456",
                     occurredAt:
-                        "2026-09-08T10:00:00.000Z"
+                        daysAgo(12)
                 });
 
                 const response =
@@ -262,6 +272,21 @@ describe(
                         count: 2
                     }
                 });
+
+                expect(
+                    await GithubPullRequestState.countDocuments({
+                        project: projectId
+                    })
+                ).toBe(2);
+
+                const repositoryState =
+                    await GithubRepository.findById(
+                        repositoryId
+                    ).select("pullRequestStateVersion").lean();
+
+                expect(
+                    repositoryState.pullRequestStateVersion
+                ).toBe(1);
             }
         );
 
@@ -285,6 +310,77 @@ describe(
                 expect(
                     response.body.range
                 ).toBe("30d");
+            }
+        );
+
+        test(
+            "counts a reopened pull request as open after a later reopen event",
+            async () => {
+                await createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    externalId: "pr:301:opened",
+                    occurredAt: daysAgo(8),
+                    githubId: 301
+                });
+                await createSignal({
+                    type: "PULL_REQUEST_CLOSED",
+                    externalId: "pr:301:closed",
+                    occurredAt: daysAgo(4),
+                    githubId: 301
+                });
+                await createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    externalId: "pr:301:reopened",
+                    occurredAt: daysAgo(2),
+                    githubId: 301
+                });
+
+                const response =
+                    await request(app)
+                        .get(
+                            `/api/v1/projects/${projectId}/github/metrics?days=30`
+                        )
+                        .set(
+                            "Authorization",
+                            `Bearer ${token}`
+                        );
+
+                expect(response.status).toBe(200);
+                expect(response.body.pullRequests).toMatchObject({
+                    opened: 2,
+                    merged: 0,
+                    open: 1
+                });
+            }
+        );
+
+        test(
+            "includes an older currently open PR in a short metrics range",
+            async () => {
+                await createSignal({
+                    type: "PULL_REQUEST_OPENED",
+                    externalId: "pr:302:opened",
+                    occurredAt: daysAgo(50),
+                    githubId: 302
+                });
+
+                const response =
+                    await request(app)
+                        .get(
+                            `/api/v1/projects/${projectId}/github/metrics?days=7`
+                        )
+                        .set(
+                            "Authorization",
+                            `Bearer ${token}`
+                        );
+
+                expect(response.status).toBe(200);
+                expect(response.body.pullRequests).toMatchObject({
+                    opened: 0,
+                    merged: 0,
+                    open: 1,
+                    oldestOpenPrAgeHours: 1200
+                });
             }
         );
 

@@ -124,12 +124,30 @@ const getPullRequestStates = (signals) => {
 
 const analyzeAgingPullRequests = (
     signals,
-    now
+    now,
+    pullRequestStates
 ) => {
     const risks = [];
 
     const pullRequests =
-        getPullRequestStates(signals);
+        Array.isArray(pullRequestStates) &&
+        pullRequestStates.length > 0
+        ? pullRequestStates
+              .filter(
+                  (pullRequest) =>
+                      pullRequest.latestEventType ===
+                      "PULL_REQUEST_OPENED"
+              )
+              .map((pullRequest) => ({
+                  id: pullRequest.githubId,
+                  state: "open",
+                  openedAt: pullRequest.lastOpenedAt,
+                  latestSignal: {
+                      metadata:
+                          pullRequest.latestEventMetadata || {}
+                  }
+              }))
+        : getPullRequestStates(signals);
 
     for (const pullRequest of pullRequests) {
         if (
@@ -424,13 +442,15 @@ const calculateMedian = (values) => {
 
 const analyzePullRequestCycleTime = (
     signals,
-    now
+    now,
+    summarizedCycleTimes
 ) => {
-    const cycleTimes =
-        calculatePullRequestCycleTimes(
-            signals,
-            now
-        );
+    const cycleTimes = Array.isArray(summarizedCycleTimes)
+        ? summarizedCycleTimes
+        : calculatePullRequestCycleTimes(
+              signals,
+              now
+          );
 
     if (
         cycleTimes.length <
@@ -474,12 +494,15 @@ const analyzePullRequestCycleTime = (
 
 const analyzeGithubProject = ({
     githubSignals = [],
+    githubPullRequestStates,
+    githubPullRequestCycleTimes,
     now = new Date()
 }) => {
     return [
         ...analyzeAgingPullRequests(
             githubSignals,
-            now
+            now,
+            githubPullRequestStates
         ),
 
         ...analyzeIssueBacklog(
@@ -494,7 +517,8 @@ const analyzeGithubProject = ({
 
         ...analyzePullRequestCycleTime(
             githubSignals,
-            now
+            now,
+            githubPullRequestCycleTimes
         )
     ];
 };

@@ -8,6 +8,9 @@ const GithubRepository = require(
 const GithubSignal = require(
     "../../src/modules/github/github.signal.model"
 );
+const GithubPullRequestState = require(
+    "../../src/modules/github/github.pullRequestState.model"
+);
 
 const {
     createSignal
@@ -25,6 +28,7 @@ describe("GitHub Signal Service", () => {
         await Project.deleteMany({});
         await GithubRepository.deleteMany({});
         await GithubSignal.deleteMany({});
+        await GithubPullRequestState.deleteMany({});
 
         user = await User.create({
             name: "GitHub Signal Test User",
@@ -244,6 +248,69 @@ describe("GitHub Signal Service", () => {
     });
 
     test(
+        "keeps PR summary state correct for reopened and out-of-order lifecycle signals",
+        async () => {
+            const prId = 9001;
+            const openAt = new Date("2026-09-10T10:00:00Z");
+            const closeAt = new Date("2026-09-12T10:00:00Z");
+            const reopenAt = new Date("2026-09-14T10:00:00Z");
+
+            await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                createSignalData({
+                    type: "PULL_REQUEST_OPENED",
+                    externalId: `pr:${prId}:opened`,
+                    occurredAt: openAt,
+                    metadata: { githubId: prId }
+                })
+            );
+            await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                createSignalData({
+                    type: "PULL_REQUEST_CLOSED",
+                    externalId: `pr:${prId}:closed`,
+                    occurredAt: closeAt,
+                    metadata: { githubId: prId }
+                })
+            );
+            await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                createSignalData({
+                    type: "PULL_REQUEST_OPENED",
+                    externalId: `pr:${prId}:reopened`,
+                    occurredAt: reopenAt,
+                    metadata: { githubId: prId }
+                })
+            );
+            await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                createSignalData({
+                    type: "PULL_REQUEST_CLOSED",
+                    externalId: `pr:${prId}:late-close-delivery`,
+                    occurredAt: closeAt,
+                    metadata: { githubId: prId }
+                })
+            );
+
+            const state =
+                await GithubPullRequestState.findOne({
+                    repository: repository._id,
+                    githubId: String(prId)
+                }).lean();
+
+            expect(state.firstOpenedAt).toEqual(openAt);
+            expect(state.latestEventAt).toEqual(reopenAt);
+            expect(state.latestEventType).toBe(
+                "PULL_REQUEST_OPENED"
+            );
+        }
+    );
+
+    test(
         "deduplicates the same GitHub event across REST ingestion and webhook ingestion",
         async () => {
             const signalData = createSignalData({
@@ -283,6 +350,60 @@ describe("GitHub Signal Service", () => {
 
             expect(
                 await GithubSignal.countDocuments({})
+            ).toBe(1);
+        }
+    );
+
+    test(
+        "repairs a missing PR summary when an already stored signal is replayed",
+        async () => {
+            const signalData = createSignalData({
+                type: "PULL_REQUEST_OPENED",
+                externalId: "pr:9002:opened",
+                occurredAt: new Date(
+                    "2026-09-10T10:00:00Z"
+                ),
+                metadata: {
+                    githubId: 9002,
+                    number: 52,
+                    title: "Recover materialized state"
+                }
+            });
+
+            await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                signalData
+            );
+            await GithubPullRequestState.deleteOne({
+                repository: repository._id,
+                githubId: "9002"
+            });
+
+            await createSignal(
+                project._id.toString(),
+                user._id.toString(),
+                signalData
+            );
+
+            const repairedState =
+                await GithubPullRequestState.findOne({
+                    repository: repository._id,
+                    githubId: "9002"
+                }).lean();
+
+            expect(repairedState).not.toBeNull();
+            expect(repairedState.latestEventType).toBe(
+                "PULL_REQUEST_OPENED"
+            );
+            expect(repairedState.latestEventMetadata.title).toBe(
+                "Recover materialized state"
+            );
+            expect(
+                await GithubSignal.countDocuments({
+                    repository: repository._id,
+                    externalId: signalData.externalId
+                })
             ).toBe(1);
         }
     );

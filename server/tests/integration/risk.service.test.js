@@ -8,6 +8,10 @@ const Task = require("../../src/modules/tasks/task.model");
 const Dependency = require("../../src/modules/dependencies/dependency.model");
 const Milestone = require("../../src/modules/milestones/milestone.model");
 const GithubSignal = require("../../src/modules/github/github.signal.model");
+const GithubRepository = require("../../src/modules/github/github.model");
+const GithubPullRequestState = require(
+    "../../src/modules/github/github.pullRequestState.model"
+);
 
 const riskService = require("../../src/modules/risks/risk.service");
 
@@ -23,6 +27,8 @@ describe("Risk Service", () => {
         await Dependency.deleteMany({});
         await Milestone.deleteMany({});
         await GithubSignal.deleteMany({});
+        await GithubRepository.deleteMany({});
+        await GithubPullRequestState.deleteMany({});
 
         const registerResponse = await request(app)
             .post("/api/v1/auth/register")
@@ -206,14 +212,26 @@ describe("Risk Service", () => {
     });
 
     test("loads GitHub signals and detects GitHub execution risks", async () => {
+        const repositoryId = "68b0a7e2c9f4a1d3e5f60718";
+        await GithubRepository.create({
+            _id: repositoryId,
+            project: projectId,
+            owner: "example",
+            repo: "risk-repository",
+            fullName: "example/risk-repository",
+            githubId: 456789,
+            defaultBranch: "main",
+            private: false
+        });
+
         await GithubSignal.create([
             {
                 project: projectId,
-                repository: "68b0a7e2c9f4a1d3e5f60718",
+                repository: repositoryId,
                 type: "PULL_REQUEST_OPENED",
                 externalId: "pr:401:opened",
                 occurredAt: new Date(
-                    "2026-09-08T12:00:00.000Z"
+                    "2026-08-28T12:00:00.000Z"
                 ),
                 actor: {
                     id: 123,
@@ -242,13 +260,72 @@ describe("Risk Service", () => {
 
         expect(githubRisk).toMatchObject({
             type: "GITHUB_AGING_PR",
-            severity: "MEDIUM",
+            severity: "HIGH",
             githubPrId: "401",
             prNumber: 401,
             title: "Long running feature",
-            ageDays: 9
+            ageDays: 20
         });
     });
+
+    test(
+        "uses PR summaries to calculate cycle-time risk from events older than the 14-day window",
+        async () => {
+            const repository = await GithubRepository.create({
+                project: projectId,
+                owner: "example",
+                repo: "cycle-time-risk",
+                fullName: "example/cycle-time-risk",
+                githubId: 987654,
+                defaultBranch: "main",
+                private: false
+            });
+
+            const signals = [];
+            for (const githubId of [501, 502, 503]) {
+                signals.push(
+                    {
+                        project: projectId,
+                        repository: repository._id,
+                        type: "PULL_REQUEST_OPENED",
+                        externalId: `pr:${githubId}:opened`,
+                        occurredAt: new Date(
+                            "2026-08-01T12:00:00.000Z"
+                        ),
+                        metadata: { githubId }
+                    },
+                    {
+                        project: projectId,
+                        repository: repository._id,
+                        type: "PULL_REQUEST_MERGED",
+                        externalId: `pr:${githubId}:merged`,
+                        occurredAt: new Date(
+                            "2026-08-09T12:00:00.000Z"
+                        ),
+                        metadata: { githubId }
+                    }
+                );
+            }
+            await GithubSignal.create(signals);
+
+            const risks = await riskService.getProjectRisks(
+                projectId,
+                userId,
+                new Date("2026-09-17T12:00:00.000Z")
+            );
+
+            expect(risks).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        type: "GITHUB_HIGH_PR_CYCLE_TIME",
+                        severity: "HIGH",
+                        mergedPrCount: 3,
+                        medianCycleTimeHours: 192
+                    })
+                ])
+            );
+        }
+    );
 
     test("rejects invalid project id", async () => {
         await expect(

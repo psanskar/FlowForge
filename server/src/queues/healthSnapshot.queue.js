@@ -148,6 +148,42 @@ const healthSnapshotQueue =
               }
           );
 
+const createTestDispatchQueue = () => ({
+    upsertJobScheduler: async () => null,
+    close: async () => {}
+});
+
+const healthSnapshotDispatchQueue =
+    process.env.NODE_ENV === "test"
+        ? createTestDispatchQueue()
+        : new Queue(
+              "health-snapshot-dispatch",
+              {
+                  connection,
+
+                  defaultJobOptions: {
+                      attempts: 3,
+
+                      backoff: {
+                          type: "exponential",
+                          delay: 5000
+                      },
+
+                      removeOnComplete: {
+                          age:
+                              24 * 60 * 60,
+                          count: 100
+                      },
+
+                      removeOnFail: {
+                          age:
+                              7 * 24 * 60 * 60,
+                          count: 1000
+                      }
+                  }
+              }
+          );
+
 const enqueueHealthSnapshot =
     async ({
         projectId,
@@ -169,10 +205,13 @@ const enqueueHealthSnapshot =
 const closeHealthSnapshotQueue =
     async () => {
         await healthSnapshotQueue.close();
+
+        await healthSnapshotDispatchQueue.close();
     };
 
 module.exports = {
     healthSnapshotQueue,
+    healthSnapshotDispatchQueue,
     enqueueHealthSnapshot,
     closeHealthSnapshotQueue
 };

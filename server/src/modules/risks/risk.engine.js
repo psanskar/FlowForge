@@ -534,6 +534,8 @@ const analyzeProject = ({
     dependencies = [],
     milestones = [],
     githubSignals = [],
+    githubPullRequestStates,
+    githubPullRequestCycleTimes,
     now = new Date()
 }) => {
     if (!project) {
@@ -574,6 +576,8 @@ const analyzeProject = ({
 
         ...analyzeGithubProject({
             githubSignals,
+            githubPullRequestStates,
+            githubPullRequestCycleTimes,
             now
         })
     ];

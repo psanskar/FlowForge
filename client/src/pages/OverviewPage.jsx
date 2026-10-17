@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 const OverviewPage = () => {
     return (
         <section className="page-section">
@@ -19,15 +21,21 @@ const OverviewPage = () => {
                 </div>
             </div>
 
-            <div className="empty-state">
-                <h2>
-                    No project selected
-                </h2>
-
-                <p>
-                    Select a project to view its
-                    execution health and risks.
-                </p>
+            <div className="overview-start-card">
+                <div className="overview-start-mark" aria-hidden="true">
+                    ↗
+                </div>
+                <div>
+                    <span className="page-eyebrow">Start with a project</span>
+                    <h2>Bring execution signals into view</h2>
+                    <p>
+                        Open a project to review health, overdue work, blockers,
+                        contributor workload, milestones, and connected GitHub activity.
+                    </p>
+                </div>
+                <Link className="primary-button" to="/app/projects">
+                    Browse projects <span aria-hidden="true">→</span>
+                </Link>
             </div>
         </section>
     );

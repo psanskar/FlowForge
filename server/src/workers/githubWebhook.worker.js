@@ -1,3 +1,7 @@
+require("dotenv").config();
+
+const connectDB = require("../config/db");
+
 const {
     Worker
 } = require("bullmq");
@@ -123,7 +127,8 @@ const githubWebhookWorker =
               processGithubWebhookJob,
               {
                   connection,
-                  concurrency: 5
+                  concurrency: 5,
+                  autorun: false
               }
           );
 
@@ -153,7 +158,14 @@ const closeGithubWebhookWorker =
         await githubWebhookWorker.close();
     };
 
-const startGithubWebhookWorker = () => {
+const startGithubWebhookWorker = async () => {
+    await connectDB();
+    if (githubWebhookWorker instanceof Worker) {
+        githubWebhookWorker.run().catch((error) => {
+            console.error("GitHub webhook worker stopped unexpectedly:", error);
+            process.exit(1);
+        });
+    }
     console.log(
         "FlowForge GitHub webhook worker running"
     );
@@ -162,7 +174,10 @@ const startGithubWebhookWorker = () => {
 };
 
 if (require.main === module) {
-    startGithubWebhookWorker();
+    startGithubWebhookWorker().catch((error) => {
+        console.error("Failed to start GitHub webhook worker:", error);
+        process.exit(1);
+    });
 
     const shutdown = async (
         signal

@@ -1,4 +1,5 @@
 const Project = require("./project.model");
+const User = require("../users/user.model");
 
 const createProject = async ({
     name,
@@ -120,7 +121,7 @@ const getProjectById = async (projectId, userId) => {
         "members.user": userId
     }).select(
         "_id name description owner members status startDate targetDate createdAt updatedAt"
-    );
+    ).populate("members.user", "name email");
 
     if (!project) {
         const error = new Error("Project not found");
@@ -132,8 +133,80 @@ const getProjectById = async (projectId, userId) => {
     return project;
 };
 
+const addProjectMember = async ({
+    projectId,
+    requesterId,
+    email
+}) => {
+    const project = await Project.findOne({
+        _id: projectId,
+        "members.user": requesterId
+    });
+
+    if (!project) {
+        const error = new Error("Project not found");
+        error.statusCode = 404;
+        error.code = "PROJECT_NOT_FOUND";
+        throw error;
+    }
+
+    const requesterMembership = project.members.find(
+        (member) =>
+            member.user.toString() === requesterId.toString()
+    );
+
+    if (requesterMembership?.role !== "owner") {
+        const error = new Error(
+            "Only the project owner can add members"
+        );
+        error.statusCode = 403;
+        error.code = "PROJECT_OWNER_REQUIRED";
+        throw error;
+    }
+
+    const user = await User.findOne({
+        email: email.trim().toLowerCase()
+    }).select("_id name email");
+
+    if (!user) {
+        const error = new Error(
+            "No FlowForge account was found for that email"
+        );
+        error.statusCode = 404;
+        error.code = "USER_NOT_FOUND";
+        throw error;
+    }
+
+    const alreadyMember = project.members.some(
+        (member) =>
+            member.user.toString() === user._id.toString()
+    );
+
+    if (alreadyMember) {
+        const error = new Error(
+            "This user is already a project member"
+        );
+        error.statusCode = 409;
+        error.code = "PROJECT_MEMBER_EXISTS";
+        throw error;
+    }
+
+    project.members.push({
+        user: user._id,
+        role: "member"
+    });
+    await project.save();
+
+    return Project.findById(project._id)
+        .select(
+            "_id name description owner members status startDate targetDate createdAt updatedAt"
+        )
+        .populate("members.user", "name email");
+};
+
 module.exports = {
     createProject,
     listProjects,
-    getProjectById
+    getProjectById,
+    addProjectMember
 };

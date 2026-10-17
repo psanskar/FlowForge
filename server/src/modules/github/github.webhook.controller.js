@@ -1,3 +1,5 @@
+const crypto = require("crypto");
+
 const {
     verifyWebhookSignature
 } = require("./github.webhook");
@@ -115,10 +117,16 @@ const handleGithubWebhook =
                 });
             }
 
+            const payloadHash = crypto
+                .createHash("sha256")
+                .update(req.body)
+                .digest("hex");
+
             let delivery =
                 await recordDelivery({
                     deliveryId,
-                    event
+                    event,
+                    payloadHash
                 });
 
             /*
@@ -141,6 +149,22 @@ const handleGithubWebhook =
                         "GITHUB_WEBHOOK_DELIVERY_STATE_ERROR";
 
                     throw error;
+                }
+
+                if (
+                    delivery.event !== event ||
+                    (delivery.payloadHash &&
+                        delivery.payloadHash !== payloadHash)
+                ) {
+                    return res.status(409).json({
+                        success: false,
+                        error: {
+                            code:
+                                "GITHUB_WEBHOOK_DELIVERY_CONFLICT",
+                            message:
+                                "GitHub delivery ID was already used for a different event or payload"
+                        }
+                    });
                 }
 
                 /*

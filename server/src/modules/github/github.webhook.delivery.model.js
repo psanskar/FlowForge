@@ -15,6 +15,12 @@ const githubWebhookDeliverySchema =
                 trim: true
             },
 
+            payloadHash: {
+                type: String,
+                default: null,
+                select: false
+            },
+
             status: {
                 type: String,
                 enum: [

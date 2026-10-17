@@ -9,7 +9,8 @@ const {
 
 const {
     validateCreateProject,
-    validateProjectListQuery
+    validateProjectListQuery,
+    validateAddProjectMember
 } = require("./project.validation");
 
 const router = express.Router();
@@ -33,6 +34,14 @@ router.get(
     requireAuth,
     validateObjectId("projectId"),
     projectController.getProject
+);
+
+router.post(
+    "/:projectId/members",
+    requireAuth,
+    validateObjectId("projectId"),
+    validateAddProjectMember,
+    projectController.addProjectMember
 );
 
 module.exports = router;

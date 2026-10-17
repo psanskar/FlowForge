@@ -8,17 +8,19 @@ const getDelivery = async (
 ) => {
     return GithubWebhookDelivery.findOne({
         deliveryId
-    });
+    }).select("+payloadHash");
 };
 
 const recordDelivery = async ({
     deliveryId,
-    event
+    event,
+    payloadHash
 }) => {
     try {
         return await GithubWebhookDelivery.create({
             deliveryId,
             event,
+            payloadHash,
             status: "QUEUED"
         });
     } catch (error) {

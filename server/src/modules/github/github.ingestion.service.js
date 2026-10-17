@@ -201,12 +201,15 @@ const normalizeWebhookPullRequest = (
     let type;
     let lifecycleAction;
 
-    if (action === "opened") {
+    if (
+        action === "opened" ||
+        action === "reopened"
+    ) {
         type =
             "PULL_REQUEST_OPENED";
 
         lifecycleAction =
-            "opened";
+            action;
     } else if (
         action === "closed" &&
         pullRequest.merged_at
