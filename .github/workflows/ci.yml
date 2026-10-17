@@ -14,10 +14,10 @@ concurrency:
 jobs:
   client-build:
     name: Client build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -31,7 +31,7 @@ jobs:
 
   server-tests:
     name: Server tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       mongodb:
         image: mongo:8.0
@@ -48,8 +48,8 @@ jobs:
       JWT_SECRET: flowforge-ci-test-secret
       GITHUB_WEBHOOK_SECRET: flowforge-ci-webhook-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
