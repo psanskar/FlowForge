@@ -149,13 +149,19 @@ describe(
         test(
             "returns GitHub execution metrics for a project member",
             async () => {
+                const daysAgo = (days) =>
+                    new Date(
+                        Date.now() -
+                            days * 24 * 60 * 60 * 1000
+                    ).toISOString();
+
                 await createSignal({
                     type:
                         "PULL_REQUEST_OPENED",
                     externalId:
                         "pr:101:opened",
                     occurredAt:
-                        "2026-09-01T10:00:00.000Z",
+                        daysAgo(22),
                     githubId:
                         101
                 });
@@ -166,7 +172,7 @@ describe(
                     externalId:
                         "pr:101:merged",
                     occurredAt:
-                        "2026-09-02T10:00:00.000Z",
+                        daysAgo(21),
                     githubId:
                         101
                 });
@@ -177,7 +183,7 @@ describe(
                     externalId:
                         "pr:102:opened",
                     occurredAt:
-                        "2026-09-10T10:00:00.000Z",
+                        daysAgo(10),
                     githubId:
                         102
                 });
@@ -188,7 +194,7 @@ describe(
                     externalId:
                         "issue:201:opened",
                     occurredAt:
-                        "2026-09-05T10:00:00.000Z",
+                        daysAgo(15),
                     githubId:
                         201
                 });
@@ -199,7 +205,7 @@ describe(
                     externalId:
                         "issue:202:closed",
                     occurredAt:
-                        "2026-09-06T10:00:00.000Z",
+                        daysAgo(14),
                     githubId:
                         202
                 });
@@ -210,7 +216,7 @@ describe(
                     externalId:
                         "commit:abc123",
                     occurredAt:
-                        "2026-09-07T10:00:00.000Z"
+                        daysAgo(13)
                 });
 
                 await createSignal({
@@ -219,7 +225,7 @@ describe(
                     externalId:
                         "commit:def456",
                     occurredAt:
-                        "2026-09-08T10:00:00.000Z"
+                        daysAgo(12)
                 });
 
                 const response =
