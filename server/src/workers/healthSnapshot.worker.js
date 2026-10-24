@@ -3,6 +3,7 @@ require("dotenv").config();
 const {
     Worker
 } = require("bullmq");
+const validateEnvironment = require("../config/validateEnvironment");
 
 const {
     EventEmitter
@@ -185,7 +186,13 @@ const startHealthSnapshotWorker =
     };
 
 if (require.main === module) {
-    startHealthSnapshotWorker();
+    try {
+        validateEnvironment("worker");
+        startHealthSnapshotWorker();
+    } catch (error) {
+        console.error("Failed to start health snapshot worker:", error.message);
+        process.exitCode = 1;
+    }
 
     const shutdown =
         async (signal) => {

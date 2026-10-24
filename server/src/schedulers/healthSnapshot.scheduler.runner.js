@@ -1,4 +1,5 @@
 require("dotenv").config();
+const validateEnvironment = require("../config/validateEnvironment");
 
 const {
     startHealthSnapshotScheduler,
@@ -6,6 +7,7 @@ const {
 } = require("../queues/healthSnapshot.scheduler");
 
 const start = async () => {
+    validateEnvironment("scheduler");
     await startHealthSnapshotScheduler();
 
     console.log(

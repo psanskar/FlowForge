@@ -204,6 +204,25 @@ describe("Dependency API", () => {
         );
     });
 
+    test("loads the project dependency graph with one query for cycle detection", async () => {
+        const findSpy = jest.spyOn(Dependency, "find");
+
+        try {
+            const response = await request(app)
+                .post(`/api/v1/projects/${projectId}/dependencies`)
+                .set("Authorization", `Bearer ${token}`)
+                .send({
+                    fromTask: firstTaskId,
+                    toTask: secondTaskId
+                });
+
+            expect(response.status).toBe(201);
+            expect(findSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            findSpy.mockRestore();
+        }
+    });
+
     test("deletes a dependency", async () => {
         const createResponse = await request(app)
             .post(

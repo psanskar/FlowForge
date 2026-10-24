@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import useProject from "../hooks/useProject";
 import useProjectDashboard from "../hooks/useProjectDashboard";
 import useHealthTrend from "../hooks/useHealthTrend";
+import useProjectRealtime from "../hooks/useProjectRealtime";
 
 const formatRiskType = (type) => {
     return type
@@ -310,6 +311,8 @@ const HealthTrendSection = ({
 const ProjectWorkspacePage = () => {
     const navigate = useNavigate();
     const { projectId } = useParams();
+
+    useProjectRealtime(projectId);
 
     const {
         data: projectData,

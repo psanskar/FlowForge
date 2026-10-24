@@ -12,6 +12,21 @@ const wouldCreateCycle = async (
     const targetTaskId = fromTask.toString();
     const visited = new Set();
     const stack = [toTask.toString()];
+    const existingEdges = await Dependency.find({
+        project: projectId
+    })
+        .select("fromTask toTask")
+        .lean();
+    const adjacency = new Map();
+
+    for (const edge of existingEdges) {
+        const source = edge.fromTask.toString();
+        const destination = edge.toTask.toString();
+        const downstream = adjacency.get(source) || [];
+
+        downstream.push(destination);
+        adjacency.set(source, downstream);
+    }
 
     while (stack.length > 0) {
         const currentTaskId = stack.pop();
@@ -26,15 +41,8 @@ const wouldCreateCycle = async (
 
         visited.add(currentTaskId);
 
-        const dependencies = await Dependency.find({
-            project: projectId,
-            fromTask: new mongoose.Types.ObjectId(currentTaskId)
-        }).select("toTask");
-
-        for (const dependency of dependencies) {
-            stack.push(
-                dependency.toTask.toString()
-            );
+        for (const downstreamTaskId of adjacency.get(currentTaskId) || []) {
+            stack.push(downstreamTaskId);
         }
     }
 
@@ -109,10 +117,10 @@ const createDependency = async ({
     }
 
     const cycleDetected = await wouldCreateCycle(
-    projectId,
-    fromTask,
-    toTask
-);
+        projectId,
+        fromTask,
+        toTask
+    );
 
     if (cycleDetected) {
         const error = new Error(

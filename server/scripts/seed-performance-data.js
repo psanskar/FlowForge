@@ -8,18 +8,73 @@ const Milestone = require("../src/modules/milestones/milestone.model");
 const Dependency = require("../src/modules/dependencies/dependency.model");
 const GithubRepository = require("../src/modules/github/github.model");
 const GithubSignal = require("../src/modules/github/github.signal.model");
+const ProjectHealthSnapshot = require("../src/modules/projects/project.health.snapshot.model");
+const ProjectRiskHistory = require("../src/modules/risks/project.risk.history.model");
 
-const PROJECT_ID = "6aaa680e8d75cff772ac9316";
+const parseCount = (name, fallback, maximum) => {
+    const value = process.env[name];
+
+    if (!value) {
+        return fallback;
+    }
+
+    const count = Number(value);
+
+    if (!Number.isInteger(count) || count < 1 || count > maximum) {
+        throw new Error(`${name} must be an integer between 1 and ${maximum}`);
+    }
+
+    return count;
+};
+
+const getProjectId = () => {
+    const projectId = process.env.DEMO_PROJECT_ID;
+
+    if (!mongoose.isValidObjectId(projectId)) {
+        throw new Error(
+            "Set DEMO_PROJECT_ID to the ID of a dedicated FlowForge Demo project"
+        );
+    }
+
+    return projectId;
+};
 
 const run = async () => {
+    if (!process.env.MONGO_URI) {
+        throw new Error("MONGO_URI is required");
+    }
+
+    if (!process.argv.includes("--replace-project-data")) {
+        throw new Error(
+            "Refusing to replace project data. Re-run with --replace-project-data after checking the target project."
+        );
+    }
+
+    const demoProjectId = getProjectId();
+    const milestoneCount = 10;
+    const taskCount = parseCount("SEED_TASK_COUNT", 100, 50000);
+    const signalCount = parseCount("SEED_SIGNAL_COUNT", 50, 10000);
+
     await mongoose.connect(process.env.MONGO_URI);
 
     console.log("MongoDB connected");
 
-    const project = await Project.findById(PROJECT_ID);
+    if (!/^flowforge[-_](demo|dev|test)([-_]|$)/i.test(mongoose.connection.name)) {
+        throw new Error(
+            `Refusing to seed database '${mongoose.connection.name}'. Use a dedicated flowforge_demo database.`
+        );
+    }
+
+    const project = await Project.findById(demoProjectId);
 
     if (!project) {
-        throw new Error("FlowForge Development project not found");
+        throw new Error("Demo project not found in the selected database");
+    }
+
+    if (!/demo|performance/i.test(project.name)) {
+        throw new Error(
+            `Refusing to replace data in '${project.name}'. Target a project named with 'Demo' or 'Performance'.`
+        );
     }
 
     const ownerId = project.owner;
@@ -40,7 +95,7 @@ const run = async () => {
     console.log(`Using ${contributorIds.length} existing contributors`);
 
     // ---------------------------------------------------------
-    // CLEAN PREVIOUS PERFORMANCE DATA
+    // REPLACE ONLY DATA INSIDE THE EXPLICITLY SELECTED DEMO PROJECT
     // ---------------------------------------------------------
 
     await GithubSignal.deleteMany({
@@ -63,7 +118,15 @@ const run = async () => {
         project: project._id
     });
 
-    console.log("Previous performance data cleared");
+    await ProjectHealthSnapshot.deleteMany({
+        project: project._id
+    });
+
+    await ProjectRiskHistory.deleteMany({
+        project: project._id
+    });
+
+    console.log("Previous demo dataset removed");
 
     // ---------------------------------------------------------
     // MILESTONES
@@ -72,7 +135,7 @@ const run = async () => {
     const now = new Date();
 
     const milestoneData = Array.from(
-        { length: 10 },
+        { length: milestoneCount },
         (_, index) => ({
             project: project._id,
             name: `Performance Test Milestone ${index + 1}`,
@@ -110,7 +173,7 @@ const run = async () => {
     ];
 
     const taskData = Array.from(
-        { length: 100 },
+        { length: taskCount },
         (_, index) => {
             const status =
                 statuses[index % statuses.length];
@@ -209,11 +272,11 @@ const run = async () => {
 
     const dependencyData = [];
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 1; i < Math.min(tasks.length, 101); i++) {
         dependencyData.push({
             project: project._id,
-            fromTask: tasks[i]._id,
-            toTask: tasks[i + 1]._id,
+            fromTask: tasks[0]._id,
+            toTask: tasks[i]._id,
             createdBy: ownerId
         });
     }
@@ -259,7 +322,7 @@ const run = async () => {
     ];
 
     const githubSignals = Array.from(
-        { length: 50 },
+        { length: signalCount },
         (_, index) => ({
             project: project._id,
             repository: repository._id,
@@ -303,6 +366,7 @@ const run = async () => {
     console.log("\nPerformance dataset ready:");
     console.log({
         project: project.name,
+        projectId: project._id.toString(),
         tasks: tasks.length,
         milestones: milestones.length,
         dependencies: dependencies.length,
@@ -319,7 +383,9 @@ run().catch(async (error) => {
         error
     );
 
-    await mongoose.disconnect();
+    if (mongoose.connection.readyState !== 0) {
+        await mongoose.disconnect();
+    }
 
     process.exit(1);
 });

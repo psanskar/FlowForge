@@ -29,7 +29,7 @@ services:
       - ./server/.env
     environment:
       PORT: 5000
-      MONGO_URI: mongodb://mongo:27017/flowforge
+      MONGO_URI: mongodb://mongo:27017/${MONGO_DATABASE:-flowforge}
       REDIS_URL: redis://redis:6379
       CLIENT_URL: http://localhost:8080
     ports:
@@ -52,7 +52,7 @@ services:
     env_file:
       - ./server/.env
     environment:
-      MONGO_URI: mongodb://mongo:27017/flowforge
+      MONGO_URI: mongodb://mongo:27017/${MONGO_DATABASE:-flowforge}
       REDIS_URL: redis://redis:6379
     command: ["npm", "run", "worker:github"]
     depends_on:
@@ -67,7 +67,7 @@ services:
     env_file:
       - ./server/.env
     environment:
-      MONGO_URI: mongodb://mongo:27017/flowforge
+      MONGO_URI: mongodb://mongo:27017/${MONGO_DATABASE:-flowforge}
       REDIS_URL: redis://redis:6379
     command: ["npm", "run", "worker:health"]
     depends_on:
@@ -82,7 +82,7 @@ services:
     env_file:
       - ./server/.env
     environment:
-      MONGO_URI: mongodb://mongo:27017/flowforge
+      MONGO_URI: mongodb://mongo:27017/${MONGO_DATABASE:-flowforge}
       REDIS_URL: redis://redis:6379
     command: ["npm", "run", "scheduler:health"]
     depends_on:

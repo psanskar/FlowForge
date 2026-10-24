@@ -48,11 +48,21 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
-      NODE_ENV: test
+      NODE_ENV: development
       MONGO_URI: mongodb://127.0.0.1:27017/flowforge_test
-      JWT_SECRET: flowforge-ci-test-secret
-      GITHUB_WEBHOOK_SECRET: flowforge-ci-webhook-secret
+      REDIS_URL: redis://127.0.0.1:6379
+      JWT_SECRET: flowforge-ci-test-secret-32-characters-minimum
+      GITHUB_WEBHOOK_SECRET: flowforge-ci-webhook-secret-32-characters-minimum
     steps:
       - uses: actions/checkout@v7
 
@@ -63,6 +73,10 @@ jobs:
           cache-dependency-path: server/package-lock.json
 
       - run: npm ci
+        working-directory: server
+
+      - name: Start API and check health endpoint
+        run: npm run smoke
         working-directory: server
 
       - run: npm test -- --runInBand

@@ -3,6 +3,7 @@ require("dotenv").config();
 const {
     Worker
 } = require("bullmq");
+const validateEnvironment = require("../config/validateEnvironment");
 
 const {
     EventEmitter
@@ -164,7 +165,13 @@ const startGithubWebhookWorker = () => {
 };
 
 if (require.main === module) {
-    startGithubWebhookWorker();
+    try {
+        validateEnvironment("worker");
+        startGithubWebhookWorker();
+    } catch (error) {
+        console.error("Failed to start GitHub webhook worker:", error.message);
+        process.exitCode = 1;
+    }
 
     const shutdown = async (
         signal
