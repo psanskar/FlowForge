@@ -38,6 +38,7 @@ jobs:
   server-tests:
     name: Server tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     services:
       mongodb:
         image: mongo:8.0
@@ -79,5 +80,5 @@ jobs:
         run: npm run smoke
         working-directory: server
 
-      - run: npm test -- --runInBand
+      - run: npm test -- --runInBand --forceExit
         working-directory: server
