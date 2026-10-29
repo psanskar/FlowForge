@@ -117,14 +117,38 @@ npm run lint
 npm run build
 ```
 
-The server suite uses a real MongoDB database. Create `server/.env.test` with `MONGO_URI` pointing to a **dedicated disposable test database** and set `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET`. Then run:
+The browser journey in `client/e2e` covers registration, project creation, milestone creation, and a task linked to that milestone. It starts the API and Vite client automatically and is configured to use only a local `flowforge_browser_test` database, never the app database. Start the temporary test services with `docker compose -f docker-compose.test.yml up -d --wait`, install Chromium once with `npx playwright install chromium`, then run:
+
+```sh
+cd client
+npm ci
+npm run test:e2e
+```
+
+GitHub Actions runs this browser journey against disposable MongoDB and Redis services.
+
+The server suite uses a temporary MongoDB and Redis pair that is separate from the persistent `flowforge` application database. The test MongoDB has no named volume; removing its container removes its data. Test setup also refuses to connect to or drop any database other than `flowforge_test`.
+
+Copy `server/.env.test.example` to `server/.env.test`, replace the test secrets, and start the temporary services from the repository root:
+
+```sh
+docker compose -f docker-compose.test.yml up -d --wait
+```
+
+Then run the suite:
 
 ```sh
 cd server
 npm test -- --runInBand
 ```
 
-The test setup drops the configured test database after the suite completes. Never point `server/.env.test` at development, staging, or production data.
+When the suite finishes, stop and remove the temporary services from the repository root:
+
+```sh
+docker compose -f docker-compose.test.yml down
+```
+
+The test setup drops only the dedicated test database after the suite completes. Never point `server/.env.test` at development, staging, or production data.
 
 With MongoDB, Redis, and the API environment variables available, the startup smoke check starts the real API process and checks its health endpoint:
 

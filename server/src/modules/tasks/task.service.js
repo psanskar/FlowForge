@@ -224,7 +224,8 @@ const getTaskById = async (taskId, userId) => {
         throw error;
     }
 
-    const task = await Task.findById(taskId);
+    const task = await Task.findById(taskId)
+        .populate("milestone", "name");
 
     if (!task) {
         const error = new Error("Task not found");

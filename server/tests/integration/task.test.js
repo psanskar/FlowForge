@@ -4,6 +4,7 @@ const app = require("../../src/app");
 const User = require("../../src/modules/users/user.model");
 const Project = require("../../src/modules/projects/project.model");
 const Task = require("../../src/modules/tasks/task.model");
+const Milestone = require("../../src/modules/milestones/milestone.model");
 
 describe("Task API", () => {
     let token;
@@ -14,6 +15,7 @@ describe("Task API", () => {
         await User.deleteMany({});
         await Project.deleteMany({});
         await Task.deleteMany({});
+        await Milestone.deleteMany({});
 
         const registerResponse = await request(app)
             .post("/api/v1/auth/register")
@@ -79,6 +81,37 @@ describe("Task API", () => {
 
         expect(databaseTask).not.toBeNull();
         expect(databaseTask.title).toBe("Implement authentication");
+    });
+
+    test("returns the milestone name with task details", async () => {
+        const milestoneResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/milestones`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                name: "Browser delivery milestone",
+                dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            });
+
+        expect(milestoneResponse.status).toBe(201);
+
+        const milestone = milestoneResponse.body.data;
+        const taskResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/tasks`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({
+                title: "Milestone-linked task",
+                milestone: milestone._id
+            });
+
+        expect(taskResponse.status).toBe(201);
+
+        const detailResponse = await request(app)
+            .get(`/api/v1/tasks/${taskResponse.body.data.task._id}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(detailResponse.status).toBe(200);
+        expect(detailResponse.body.data.task.milestone.name)
+            .toBe("Browser delivery milestone");
     });
 
     test("creates an in-progress task with normalized progress", async () => {

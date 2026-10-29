@@ -7,6 +7,7 @@ import {
 
 import useProject from "../hooks/useProject";
 import useCreateTask from "../hooks/useCreateTask";
+import useProjectDashboard from "../hooks/useProjectDashboard";
 
 const CreateTaskPage = () => {
     const { projectId } = useParams();
@@ -26,6 +27,8 @@ const CreateTaskPage = () => {
 
     const project = projectData?.data ?? null;
     const members = project?.members ?? [];
+    const { data: dashboardData } = useProjectDashboard(projectId);
+    const milestones = dashboardData?.data?.milestones ?? [];
 
     const [title, setTitle] = useState("");
     const [description, setDescription] =
@@ -36,6 +39,7 @@ const CreateTaskPage = () => {
         useState("medium");
     const [assignee, setAssignee] =
         useState("");
+    const [milestone, setMilestone] = useState("");
     const [dueDate, setDueDate] =
         useState("");
     const [progress, setProgress] =
@@ -58,6 +62,10 @@ const CreateTaskPage = () => {
 
             if (assignee) {
                 payload.assignee = assignee;
+            }
+
+            if (milestone) {
+                payload.milestone = milestone;
             }
 
             if (dueDate) {
@@ -274,6 +282,25 @@ const CreateTaskPage = () => {
                                     </option>
                                 );
                             })}
+                        </select>
+                    </div>
+
+                    <div className="form-field">
+                        <label htmlFor="task-milestone">
+                            Milestone
+                        </label>
+
+                        <select
+                            id="task-milestone"
+                            value={milestone}
+                            onChange={(event) => setMilestone(event.target.value)}
+                        >
+                            <option value="">No milestone</option>
+                            {milestones.map((item) => (
+                                <option key={item.id ?? item._id} value={item.id ?? item._id}>
+                                    {item.name}
+                                </option>
+                            ))}
                         </select>
                     </div>
 

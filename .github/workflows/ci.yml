@@ -35,6 +35,60 @@ jobs:
         env:
           VITE_API_BASE_URL: http://localhost:5000/api/v1
 
+  client-e2e:
+    name: Browser project creation journey
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    services:
+      mongodb:
+        image: mongo:8.0.30
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      NODE_ENV: test
+      E2E_MONGO_URI: mongodb://127.0.0.1:27017/flowforge_browser_test
+      E2E_REDIS_URL: redis://127.0.0.1:6379
+      E2E_JWT_SECRET: flowforge-browser-test-secret-32-characters-minimum
+      E2E_GITHUB_WEBHOOK_SECRET: flowforge-browser-webhook-secret-32-characters-minimum
+      CLIENT_URL: http://127.0.0.1:5175
+      VITE_API_BASE_URL: http://127.0.0.1:5500/api/v1
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            client/package-lock.json
+            server/package-lock.json
+
+      - run: npm ci
+        working-directory: server
+
+      - run: npm ci
+        working-directory: client
+
+      - run: npx playwright install --with-deps chromium
+        working-directory: client
+
+      - run: npm run test:e2e
+        working-directory: client
+
   server-tests:
     name: Server tests
     runs-on: ubuntu-22.04
@@ -80,5 +134,5 @@ jobs:
         run: npm run smoke
         working-directory: server
 
-      - run: npm test -- --runInBand --forceExit
+      - run: npm test -- --forceExit
         working-directory: server

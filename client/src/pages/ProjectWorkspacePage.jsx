@@ -645,6 +645,13 @@ const ProjectWorkspacePage = () => {
                         Track progress toward the
                         project's major delivery points.
                     </p>
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => navigate(`/app/projects/${projectId}/milestones/new`)}
+                    >
+                        Create milestone
+                    </button>
                 </div>
 
                 {milestones?.length ? (
