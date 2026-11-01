@@ -135,6 +135,7 @@ const loadProjectRiskData = async (
                 $in: [
                     "PULL_REQUEST_OPENED",
                     "PULL_REQUEST_MERGED",
+                    "PULL_REQUEST_CLOSED",
                     "ISSUE_OPENED",
                     "ISSUE_CLOSED"
                 ]
@@ -152,7 +153,8 @@ const loadProjectRiskData = async (
             latestEventType: {
                 $in: [
                     "PULL_REQUEST_OPENED",
-                    "PULL_REQUEST_MERGED"
+                    "PULL_REQUEST_MERGED",
+                    "PULL_REQUEST_CLOSED"
                 ]
             }
         })

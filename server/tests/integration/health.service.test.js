@@ -3,6 +3,11 @@ const mongoose = require("mongoose");
 const Project = require("../../src/modules/projects/project.model");
 const User = require("../../src/modules/users/user.model");
 const Task = require("../../src/modules/tasks/task.model");
+const GithubSignal = require("../../src/modules/github/github.signal.model");
+const GithubRepository = require("../../src/modules/github/github.model");
+const GithubPullRequestState = require(
+    "../../src/modules/github/github.pullRequestState.model"
+);
 
 const {
     getProjectHealth
@@ -36,6 +41,18 @@ describe("Health Service", () => {
     });
 
     afterEach(async () => {
+        await GithubSignal.deleteMany({
+            project: project._id
+        });
+
+        await GithubRepository.deleteMany({
+            project: project._id
+        });
+
+        await GithubPullRequestState.deleteMany({
+            project: project._id
+        });
+
         await Task.deleteMany({
             project: project._id
         });
@@ -114,6 +131,54 @@ describe("Health Service", () => {
             code: "INVALID_PROJECT_ID"
         });
     });
+
+    test("includes GitHub aging PR risks in project health", async () => {
+        const repository = await GithubRepository.create({
+            project: project._id,
+            owner: "example",
+            repo: "health-risk-repository",
+            fullName: "example/health-risk-repository",
+            githubId: 876543,
+            defaultBranch: "main",
+            private: false
+        });
+
+        await GithubSignal.create({
+            project: project._id,
+            repository: repository._id,
+            type: "PULL_REQUEST_OPENED",
+            externalId: "pr:901:opened",
+            occurredAt: new Date("2026-08-28T12:00:00.000Z"),
+            actor: {
+                id: 123,
+                login: "developer"
+            },
+            metadata: {
+                githubId: 901,
+                number: 901,
+                title: "Long running feature"
+            }
+        });
+
+    const result = await getProjectHealth(
+        project._id.toString(),
+        user._id.toString(),
+        new Date("2026-09-17T12:00:00.000Z")
+    );
+
+    expect(result.score).toBe(85);
+
+    expect(result.risks).toEqual(
+        expect.arrayContaining([
+            expect.objectContaining({
+                type: "GITHUB_AGING_PR",
+                severity: "HIGH",
+                githubPrId: "901"
+            })
+        ])
+    );
+});
+
 
     test("rejects non-member access", async () => {
         const anotherUser = await User.create({

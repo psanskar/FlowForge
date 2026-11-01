@@ -5,83 +5,76 @@ const mongoose = require("mongoose");
 
 const app = require("./app");
 const connectDB = require("./config/db");
-const { initializeSocket } = require("./realtime/socket");
+const validateEnvironment = require("./config/validateEnvironment");
 const {
-    closeGithubWebhookQueue
-} = require("./queues/githubWebhook.queue");
+    connectAuthRateLimitStore,
+    closeAuthRateLimitStore
+} = require("./middleware/authRateLimit.middleware");
+const { initializeSocket } = require("./realtime/socket");
+const { closeGithubWebhookQueue } = require("./queues/githubWebhook.queue");
 
 const PORT = process.env.PORT || 5000;
 
-const createServer = () => {
-    const httpServer = http.createServer(app);
+const closeSocketServer = (httpServer) => new Promise((resolve, reject) => {
+    if (!httpServer.io?.close) {
+        if (!httpServer.listening) {
+            resolve();
+            return;
+        }
 
-    httpServer.io = initializeSocket(httpServer);
-
-    return httpServer;
-};
-
-const shutdownServer = async (httpServer) => {
-    if (httpServer?.io) {
-        await new Promise((resolve, reject) => {
-            httpServer.io.close((error) => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
-
-                resolve();
-            });
-        });
-    } else if (httpServer?.listening) {
-        await new Promise((resolve, reject) => {
-            httpServer.close((error) => {
-                if (error) {
-                    reject(error);
-                    return;
-                }
-
-                resolve();
-            });
-        });
+        httpServer.close((error) => error ? reject(error) : resolve());
+        return;
     }
 
+    httpServer.io.close((error) => error ? reject(error) : resolve());
+});
+
+const shutdownServer = async (httpServer) => {
     let shutdownError;
 
     try {
-        await closeGithubWebhookQueue();
+        await closeSocketServer(httpServer);
     } catch (error) {
         shutdownError = error;
     }
 
     try {
-        await mongoose.disconnect();
+        await closeGithubWebhookQueue();
     } catch (error) {
-        shutdownError ||= error;
+        shutdownError ??= error;
     }
+
+    const cleanupResults = await Promise.allSettled([
+        closeAuthRateLimitStore(),
+        mongoose.disconnect()
+    ]);
+    const cleanupError = cleanupResults.find((result) => result.status === "rejected");
+    shutdownError ??= cleanupError?.reason;
 
     if (shutdownError) {
         throw shutdownError;
     }
 };
 
+const createServer = () => {
+    const httpServer = http.createServer(app);
+
+    initializeSocket(httpServer);
+
+    return httpServer;
+};
+
 const startServer = async () => {
+    validateEnvironment("api");
     await connectDB();
+    await connectAuthRateLimitStore();
 
     const httpServer = createServer();
 
-    await new Promise((resolve, reject) => {
-        const handleListenError = (error) => {
-            reject(error);
-        };
-
-        httpServer.once("error", handleListenError);
-        httpServer.listen(PORT, () => {
-            httpServer.off("error", handleListenError);
-            console.log(
-                `FlowForge API running on port ${PORT}`
-            );
-            resolve();
-        });
+    httpServer.listen(PORT, () => {
+        console.log(
+            `FlowForge API running on port ${PORT}`
+        );
     });
 
     return httpServer;
@@ -90,46 +83,20 @@ const startServer = async () => {
 if (require.main === module) {
     startServer()
         .then((httpServer) => {
-            let shutdownPromise;
+            const shutdown = async (signal) => {
+                console.log(`Received ${signal}. Shutting down FlowForge API...`);
 
-            const shutdown = (signal) => {
-                if (shutdownPromise) {
-                    return shutdownPromise;
-                }
+                await shutdownServer(httpServer);
 
-                console.log(
-                    `Received ${signal}. Shutting down FlowForge API...`
-                );
-
-                shutdownPromise = shutdownServer(
-                    httpServer
-                )
-                    .then(() => {
-                        console.log(
-                            "FlowForge API stopped"
-                        );
-                        process.exit(0);
-                    })
-                    .catch((error) => {
-                        console.error(
-                            "FlowForge API shutdown failed:",
-                            error
-                        );
-                        process.exit(1);
-                    });
-
-                return shutdownPromise;
+                process.exit(0);
             };
 
             process.on("SIGINT", () => shutdown("SIGINT"));
             process.on("SIGTERM", () => shutdown("SIGTERM"));
         })
         .catch((error) => {
-            console.error(
-                "FlowForge API failed to start:",
-                error
-            );
-            process.exit(1);
+            console.error("Failed to start FlowForge API:", error.message);
+            process.exitCode = 1;
         });
 }
 

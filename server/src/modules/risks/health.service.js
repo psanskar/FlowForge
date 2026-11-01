@@ -1,3 +1,4 @@
+
 const {
     loadProjectRiskData
 } = require("./risk.service");
@@ -17,10 +18,14 @@ const getProjectHealth = async (
         project,
         tasks,
         dependencies,
-        milestones
+        milestones,
+        githubSignals,
+        githubPullRequestStates,
+        githubPullRequestCycleTimes
     } = await loadProjectRiskData(
         projectId,
-        userId
+        userId,
+        now
     );
 
     const risks = analyzeProject({
@@ -28,6 +33,9 @@ const getProjectHealth = async (
         tasks,
         dependencies,
         milestones,
+        githubSignals,
+        githubPullRequestStates,
+        githubPullRequestCycleTimes,
         now
     });
 

@@ -195,6 +195,72 @@ describe("Risk Engine", () => {
         );
     });
 
+    test("counts transitive downstream tasks for dependency bottlenecks", () => {
+        const risks = analyzeProject({
+            project,
+            tasks: [
+                createTask({ _id: "task-a" }),
+                createTask({ _id: "task-b" }),
+                createTask({ _id: "task-c" }),
+                createTask({ _id: "task-d" })
+            ],
+            dependencies: [
+                {
+                    fromTask: "task-a",
+                    toTask: "task-b"
+                },
+                {
+                    fromTask: "task-b",
+                    toTask: "task-c"
+                },
+                {
+                    fromTask: "task-c",
+                    toTask: "task-d"
+                }
+            ],
+            now: NOW
+        });
+
+        const risk = risks.find(
+            (item) =>
+                item.type === "DEPENDENCY_BOTTLENECK" &&
+                item.taskId === "task-a"
+        );
+
+        expect(risk).toBeDefined();
+        expect(risk.downstreamCount).toBe(3);
+        expect(risk.severity).toBe("HIGH");
+    });
+
+    test("counts each transitive downstream task only once across branches", () => {
+        const risks = analyzeProject({
+            project,
+            tasks: [
+                createTask({ _id: "task-a" }),
+                createTask({ _id: "task-b" }),
+                createTask({ _id: "task-c" }),
+                createTask({ _id: "task-d" })
+            ],
+            dependencies: [
+                { fromTask: "task-a", toTask: "task-b" },
+                { fromTask: "task-a", toTask: "task-c" },
+                { fromTask: "task-b", toTask: "task-d" },
+                { fromTask: "task-c", toTask: "task-d" }
+            ],
+            now: NOW
+        });
+
+        const risk = risks.find(
+            (item) =>
+                item.type === "DEPENDENCY_BOTTLENECK" &&
+                item.taskId === "task-a"
+        );
+
+        expect(risk).toBeDefined();
+        expect(risk.downstreamCount).toBe(3);
+        expect(risk.severity).toBe("HIGH");
+    });
+
     test("ignores completed downstream tasks for bottleneck detection", () => {
         const risks = analyzeProject({
             project,
@@ -398,7 +464,7 @@ describe("Risk Engine", () => {
         ).toBe(false);
     });
 
-        test("adds a stable ID to task risks", () => {
+    test("adds a stable ID to task risks", () => {
         const risks = analyzeProject({
             project,
             tasks: [

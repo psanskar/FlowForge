@@ -1,5 +1,6 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
+const getClientOrigins = require("../config/clientOrigins");
 
 const Project = require("../modules/projects/project.model");
 const { initializeRealtime } = require("./events");
@@ -36,9 +37,7 @@ const authenticateSocket = (socket, next) => {
 const initializeSocket = (httpServer) => {
     io = new Server(httpServer, {
         cors: {
-            origin:
-                process.env.CLIENT_URL ||
-                "http://localhost:5173",
+            origin: getClientOrigins(),
             credentials: true
         }
     });

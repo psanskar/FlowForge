@@ -99,9 +99,7 @@ const ProjectsPage = () => {
                 <button
                     type="button"
                     className="primary-button"
-                    onClick={() =>
-                        navigate("/app/projects/new")
-                    }
+                    onClick={() => navigate("/app/projects/new")}
                 >
                     Create project
                 </button>

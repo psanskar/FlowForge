@@ -7,6 +7,7 @@ import useDeleteTask from "../hooks/useDeleteTask";
 import useCreateDependency from "../hooks/useCreateDependency";
 import useDeleteDependency from "../hooks/useDeleteDependency";
 import useTasks from "../hooks/useTasks";
+import useProjectRealtime from "../hooks/useProjectRealtime";
 
 const formatStatus = (status) => {
     const labels = {
@@ -79,6 +80,8 @@ const TaskDetailPage = () => {
         typeof task?.project === "object"
             ? task.project?._id
             : task?.project;
+
+    useProjectRealtime(projectId);
 
     const deleteTaskMutation =
         useDeleteTask(taskId, projectId);

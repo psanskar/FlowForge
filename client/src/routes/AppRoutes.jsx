@@ -14,6 +14,7 @@ import CreateProjectPage from "../pages/CreateProjectPage";
 import ProjectWorkspacePage from "../pages/ProjectWorkspacePage";
 import ProjectTasksPage from "../pages/ProjectTasksPage";
 import CreateTaskPage from "../pages/CreateTaskPage";
+import CreateMilestonePage from "../pages/CreateMilestonePage";
 import TaskDetailPage from "../pages/TaskDetailPage";
 import EditTaskPage from "../pages/EditTaskPage";
 
@@ -90,6 +91,11 @@ const AppRoutes = () => {
                 <Route
                     path="projects/:projectId/tasks/new"
                     element={<CreateTaskPage />}
+                />
+
+                <Route
+                    path="projects/:projectId/milestones/new"
+                    element={<CreateMilestonePage />}
                 />
 
                 <Route

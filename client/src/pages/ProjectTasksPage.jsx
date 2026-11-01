@@ -8,6 +8,7 @@ import {
 
 import useTasks from "../hooks/useTasks";
 import useProject from "../hooks/useProject";
+import useProjectRealtime from "../hooks/useProjectRealtime";
 
 const formatStatus = (status) => {
     const labels = {
@@ -50,6 +51,8 @@ const ProjectTasksPage = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+
+    useProjectRealtime(projectId);
 
     const [page, setPage] = useState(1);
     const [status, setStatus] = useState("");

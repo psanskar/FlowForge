@@ -268,6 +268,61 @@ describe("Risk Service", () => {
         });
     });
 
+    test("does not flag a closed pull request as aging", async () => {
+        const repository = await GithubRepository.create({
+            project: projectId,
+            owner: "example",
+            repo: "closed-pr-risk",
+            fullName: "example/closed-pr-risk",
+            githubId: 987655,
+            defaultBranch: "main",
+            private: false
+        });
+
+        await GithubSignal.create([
+            {
+                project: projectId,
+                repository: repository._id,
+                type: "PULL_REQUEST_OPENED",
+                externalId: "pr:701:opened",
+                occurredAt: new Date("2026-09-07T12:00:00.000Z"),
+                actor: { id: 123, login: "developer" },
+                metadata: {
+                    githubId: 701,
+                    number: 701,
+                    title: "Closed PR"
+                }
+            },
+            {
+                project: projectId,
+                repository: repository._id,
+                type: "PULL_REQUEST_CLOSED",
+                externalId: "pr:701:closed",
+                occurredAt: new Date("2026-09-09T12:00:00.000Z"),
+                actor: { id: 123, login: "developer" },
+                metadata: {
+                    githubId: 701,
+                    number: 701,
+                    title: "Closed PR"
+                }
+            }
+        ]);
+
+        const risks = await riskService.getProjectRisks(
+            projectId,
+            userId,
+            new Date("2026-09-17T12:00:00.000Z")
+        );
+
+        expect(
+            risks.some(
+                (risk) =>
+                    risk.type === "GITHUB_AGING_PR" &&
+                    String(risk.githubPrId) === "701"
+            )
+        ).toBe(false);
+    });
+
     test(
         "uses PR summaries to calculate cycle-time risk from events older than the 14-day window",
         async () => {

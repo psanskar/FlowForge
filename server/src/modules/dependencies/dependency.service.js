@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
 const Dependency = require("./dependency.model");
+const { withProjectDependencyLock } = require("./dependencyLock");
 const Project = require("../projects/project.model");
 const Task = require("../tasks/task.model");
 
@@ -12,6 +13,21 @@ const wouldCreateCycle = async (
     const targetTaskId = fromTask.toString();
     const visited = new Set();
     const stack = [toTask.toString()];
+    const existingEdges = await Dependency.find({
+        project: projectId
+    })
+        .select("fromTask toTask")
+        .lean();
+    const adjacency = new Map();
+
+    for (const edge of existingEdges) {
+        const source = edge.fromTask.toString();
+        const destination = edge.toTask.toString();
+        const downstream = adjacency.get(source) || [];
+
+        downstream.push(destination);
+        adjacency.set(source, downstream);
+    }
 
     while (stack.length > 0) {
         const currentTaskId = stack.pop();
@@ -26,15 +42,8 @@ const wouldCreateCycle = async (
 
         visited.add(currentTaskId);
 
-        const dependencies = await Dependency.find({
-            project: projectId,
-            fromTask: new mongoose.Types.ObjectId(currentTaskId)
-        }).select("toTask");
-
-        for (const dependency of dependencies) {
-            stack.push(
-                dependency.toTask.toString()
-            );
+        for (const downstreamTaskId of adjacency.get(currentTaskId) || []) {
+            stack.push(downstreamTaskId);
         }
     }
 
@@ -108,48 +117,48 @@ const createDependency = async ({
         throw error;
     }
 
-    const cycleDetected = await wouldCreateCycle(
-    projectId,
-    fromTask,
-    toTask
-);
-
-    if (cycleDetected) {
-        const error = new Error(
-            "Creating this dependency would create a cycle"
+    return withProjectDependencyLock(projectId, async ({ assertLockHeld }) => {
+        const cycleDetected = await wouldCreateCycle(
+            projectId,
+            fromTask,
+            toTask
         );
 
-        error.statusCode = 409;
-        error.code = "DEPENDENCY_CYCLE";
-
-        throw error;
-    }
-
-    // Create the dependency.
-    try {
-        const dependency = await Dependency.create({
-            project: projectId,
-            fromTask,
-            toTask,
-            createdBy: userId
-        });
-
-        return dependency;
-    } catch (error) {
-        // MongoDB duplicate-key error.
-        if (error.code === 11000) {
-            const duplicateError = new Error(
-                "This dependency already exists"
+        if (cycleDetected) {
+            const error = new Error(
+                "Creating this dependency would create a cycle"
             );
 
-            duplicateError.statusCode = 409;
-            duplicateError.code = "DEPENDENCY_ALREADY_EXISTS";
+            error.statusCode = 409;
+            error.code = "DEPENDENCY_CYCLE";
 
-            throw duplicateError;
+            throw error;
         }
 
-        throw error;
-    }
+        await assertLockHeld();
+
+        try {
+            return await Dependency.create({
+                project: projectId,
+                fromTask,
+                toTask,
+                createdBy: userId
+            });
+        } catch (error) {
+            if (error.code === 11000) {
+                const duplicateError = new Error(
+                    "This dependency already exists"
+                );
+
+                duplicateError.statusCode = 409;
+                duplicateError.code = "DEPENDENCY_ALREADY_EXISTS";
+
+                throw duplicateError;
+            }
+
+            throw error;
+        }
+    });
 };
 
 const listDependencies = async (

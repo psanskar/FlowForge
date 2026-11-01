@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const getClientOrigins = require("./config/clientOrigins");
 
 const authRoutes = require("./modules/auth/auth.routes");
 const errorHandler = require("./middleware/error.middleware");
@@ -30,13 +31,9 @@ const app = express();
 // Security headers
 app.use(helmet());
 
-// Allow requests from the configured frontend origin.
-// If FRONTEND_URL is not configured, allow all origins for local development.
-const corsOrigin = process.env.FRONTEND_URL || "*";
-
 app.use(
     cors({
-        origin: corsOrigin
+        origin: getClientOrigins()
     })
 );
 

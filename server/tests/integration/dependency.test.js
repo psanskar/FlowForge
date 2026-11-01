@@ -5,6 +5,7 @@ const User = require("../../src/modules/users/user.model");
 const Project = require("../../src/modules/projects/project.model");
 const Task = require("../../src/modules/tasks/task.model");
 const Dependency = require("../../src/modules/dependencies/dependency.model");
+const DependencyLock = require("../../src/modules/dependencies/dependencyLock.model");
 
 describe("Dependency API", () => {
     let token;
@@ -17,6 +18,7 @@ describe("Dependency API", () => {
         await Project.deleteMany({});
         await Task.deleteMany({});
         await Dependency.deleteMany({});
+        await DependencyLock.deleteMany({});
 
         const registerResponse = await request(app)
             .post("/api/v1/auth/register")
@@ -204,6 +206,25 @@ describe("Dependency API", () => {
         );
     });
 
+    test("loads the project dependency graph with one query for cycle detection", async () => {
+        const findSpy = jest.spyOn(Dependency, "find");
+
+        try {
+            const response = await request(app)
+                .post(`/api/v1/projects/${projectId}/dependencies`)
+                .set("Authorization", `Bearer ${token}`)
+                .send({
+                    fromTask: firstTaskId,
+                    toTask: secondTaskId
+                });
+
+            expect(response.status).toBe(201);
+            expect(findSpy).toHaveBeenCalledTimes(1);
+        } finally {
+            findSpy.mockRestore();
+        }
+    });
+
     test("deletes a dependency", async () => {
         const createResponse = await request(app)
             .post(
@@ -344,6 +365,63 @@ describe("Dependency API", () => {
             });
 
         expect(dependencyCount).toBe(2);
+    });
+
+    test("serializes concurrent opposite edges so they cannot create a cycle", async () => {
+        const originalFind = Dependency.find.bind(Dependency);
+        let activeGraphReads = 0;
+        let maximumConcurrentGraphReads = 0;
+        const findSpy = jest.spyOn(Dependency, "find").mockImplementation((...args) => {
+            const query = originalFind(...args);
+            const originalSelect = query.select.bind(query);
+            const originalLean = query.lean.bind(query);
+
+            query.select = (...selectArgs) => {
+                originalSelect(...selectArgs);
+                return query;
+            };
+
+            query.lean = (...leanArgs) => {
+                activeGraphReads += 1;
+                maximumConcurrentGraphReads = Math.max(
+                    maximumConcurrentGraphReads,
+                    activeGraphReads
+                );
+
+                return originalLean(...leanArgs)
+                    .exec()
+                    .then((edges) => new Promise((resolve) => {
+                        setTimeout(() => resolve(edges), 75);
+                    }))
+                    .finally(() => {
+                        activeGraphReads -= 1;
+                    });
+            };
+
+            return query;
+        });
+
+        try {
+            const responses = await Promise.all([
+                request(app)
+                    .post(`/api/v1/projects/${projectId}/dependencies`)
+                    .set("Authorization", `Bearer ${token}`)
+                    .send({ fromTask: firstTaskId, toTask: secondTaskId }),
+                request(app)
+                    .post(`/api/v1/projects/${projectId}/dependencies`)
+                    .set("Authorization", `Bearer ${token}`)
+                    .send({ fromTask: secondTaskId, toTask: firstTaskId })
+            ]);
+
+            expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
+            expect(maximumConcurrentGraphReads).toBe(1);
+            expect(await Dependency.countDocuments({ project: projectId })).toBe(1);
+
+            const rejectedResponse = responses.find(({ status }) => status === 409);
+            expect(rejectedResponse.body.error.code).toBe("DEPENDENCY_CYCLE");
+        } finally {
+            findSpy.mockRestore();
+        }
     });
 
     test("rejects dependency creation when a task belongs to another project", async () => {

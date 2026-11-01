@@ -1,209 +1,130 @@
 import { useState } from "react";
-import {
-    Link,
-    useNavigate
-} from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import useCreateProject from "../hooks/useCreateProject";
 
-const getErrorMessage = (error) => {
-    const details = error?.data?.error?.details;
-    const detailMessages = details
-        ? Object.values(details).filter(
-            (message) => typeof message === "string"
-        )
-        : [];
-
-    return detailMessages.join(" ") ||
-        error?.message ||
-        "Unable to create the project.";
+const localDateValue = () => {
+    const today = new Date();
+    const offset = today.getTimezoneOffset();
+    return new Date(today.getTime() - offset * 60_000)
+        .toISOString()
+        .slice(0, 10);
 };
 
 const CreateProjectPage = () => {
     const navigate = useNavigate();
-    const {
-        mutateAsync: createProject,
-        isPending
-    } = useCreateProject();
-
+    const createProject = useCreateProject();
     const [name, setName] = useState("");
     const [description, setDescription] = useState("");
-    const [startDate, setStartDate] = useState("");
+    const [startDate, setStartDate] = useState(localDateValue);
     const [targetDate, setTargetDate] = useState("");
-    const [formError, setFormError] = useState("");
+    const [dateError, setDateError] = useState("");
 
     const handleSubmit = async (event) => {
         event.preventDefault();
-        setFormError("");
+        setDateError("");
 
-        if (
-            startDate &&
-            targetDate &&
-            targetDate < startDate
-        ) {
-            setFormError(
-                "Target date cannot be earlier than start date."
-            );
+        if (startDate && targetDate && targetDate < startDate) {
+            setDateError("Target date cannot be earlier than start date.");
             return;
         }
 
-        const payload = {
-            name: name.trim(),
-            description: description.trim()
-        };
-
-        if (startDate) {
-            payload.startDate = startDate;
-        }
-
-        if (targetDate) {
-            payload.targetDate = targetDate;
-        }
-
         try {
-            const result = await createProject(payload);
-            const projectId = result?.data?.project?._id;
-
-            if (!projectId) {
-                setFormError(
-                    "The project was created, but its details could not be loaded."
-                );
-                return;
-            }
-
-            navigate(
-                `/app/projects/${projectId}`,
-                { replace: true }
-            );
-        } catch (error) {
-            setFormError(getErrorMessage(error));
+            const response = await createProject.mutateAsync({
+                name: name.trim(),
+                description: description.trim(),
+                ...(startDate && { startDate }),
+                ...(targetDate && { targetDate })
+            });
+            navigate(`/app/projects/${response.data.project._id}`, {
+                replace: true
+            });
+        } catch {
+            // The mutation error is rendered below.
         }
     };
 
     return (
-        <main className="page-section">
-            <div className="page-heading">
+        <main className="page-container">
+            <div className="page-header">
                 <div>
-                    <span className="page-eyebrow">
-                        Projects
-                    </span>
-
-                    <h1>Create a project</h1>
-
-                    <p>
-                        Set the project scope and dates
-                        so FlowForge can track its execution.
-                    </p>
+                    <p>Projects</p>
+                    <h1>Create project</h1>
+                    <p>Set the project context and target dates so FlowForge can track execution against the plan.</p>
                 </div>
-
-                <Link
-                    className="project-form-cancel"
-                    to="/app/projects"
-                >
-                    Back to projects
-                </Link>
+                <Link to="/app/projects">Back to projects</Link>
             </div>
 
             <form
-                className="dashboard-card project-form"
+                className="dashboard-card task-form"
                 onSubmit={handleSubmit}
+                aria-label="Create project form"
             >
                 <div className="form-field">
-                    <label htmlFor="project-name">
-                        Project name
-                    </label>
-
+                    <label htmlFor="project-name">Project name</label>
                     <input
                         id="project-name"
-                        type="text"
+                        name="name"
                         value={name}
-                        onChange={(event) =>
-                            setName(event.target.value)
-                        }
+                        onChange={(event) => setName(event.target.value)}
+                        maxLength={120}
+                        placeholder="e.g. Website launch"
                         required
-                        maxLength={200}
                         autoFocus
-                        placeholder="e.g. Website redesign"
                     />
                 </div>
 
                 <div className="form-field">
-                    <label htmlFor="project-description">
-                        Description
-                    </label>
-
+                    <label htmlFor="project-description">Description <span>(optional)</span></label>
                     <textarea
                         id="project-description"
+                        name="description"
                         value={description}
-                        onChange={(event) =>
-                            setDescription(event.target.value)
-                        }
+                        onChange={(event) => setDescription(event.target.value)}
                         rows={4}
-                        maxLength={5000}
-                        placeholder="What is this project intended to achieve?"
+                        maxLength={2000}
+                        placeholder="What is this project expected to deliver?"
                     />
                 </div>
 
-                <div className="project-form-grid">
+                <div className="task-form-grid">
                     <div className="form-field">
-                        <label htmlFor="project-start-date">
-                            Start date
-                        </label>
-
+                        <label htmlFor="project-start-date">Start date <span>(optional)</span></label>
                         <input
                             id="project-start-date"
+                            name="startDate"
                             type="date"
                             value={startDate}
-                            onChange={(event) =>
-                                setStartDate(event.target.value)
-                            }
+                            onChange={(event) => setStartDate(event.target.value)}
                         />
                     </div>
-
                     <div className="form-field">
-                        <label htmlFor="project-target-date">
-                            Target date
-                        </label>
-
+                        <label htmlFor="project-target-date">Target date <span>(optional)</span></label>
                         <input
                             id="project-target-date"
+                            name="targetDate"
                             type="date"
                             value={targetDate}
-                            onChange={(event) =>
-                                setTargetDate(event.target.value)
-                            }
+                            min={startDate || undefined}
+                            onChange={(event) => setTargetDate(event.target.value)}
                         />
                     </div>
                 </div>
 
-                {formError && (
-                    <p
-                        className="auth-error"
-                        role="alert"
-                    >
-                        {formError}
+                {(dateError || createProject.error) && (
+                    <p className="auth-error" role="alert">
+                        {dateError || createProject.error.message}
                     </p>
                 )}
 
-                <div className="project-form-actions">
-                    <Link
-                        className="project-form-cancel"
-                        to="/app/projects"
-                    >
-                        Cancel
-                    </Link>
-
+                <div className="task-form-actions">
+                    <Link to="/app/projects">Cancel</Link>
                     <button
                         type="submit"
                         className="primary-button"
-                        disabled={
-                            isPending ||
-                            !name.trim()
-                        }
+                        disabled={createProject.isPending}
                     >
-                        {isPending
-                            ? "Creating..."
-                            : "Create project"}
+                        {createProject.isPending ? "Creating project…" : "Create project"}
                     </button>
                 </div>
             </form>

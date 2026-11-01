@@ -309,6 +309,7 @@ const analyzeBlockedTasks = (tasks) => {
     return risks;
 };
 
+
 const analyzeDependencyBottlenecks = (
     tasks,
     dependencies
@@ -322,12 +323,15 @@ const analyzeDependencyBottlenecks = (
                     task.status
                 )
             )
-            .map((task) =>
-                task._id.toString()
-            )
+            .map((task) => task._id.toString())
     );
 
-    const downstreamCounts = new Map();
+    // Build a directed graph of unfinished tasks.
+    const adjacencyList = new Map();
+
+    for (const taskId of unfinishedTaskIds) {
+        adjacencyList.set(taskId, new Set());
+    }
 
     for (const dependency of dependencies) {
         const fromTaskId =
@@ -343,25 +347,44 @@ const analyzeDependencyBottlenecks = (
             continue;
         }
 
-        const currentCount =
-            downstreamCounts.get(fromTaskId) || 0;
-
-        downstreamCounts.set(
-            fromTaskId,
-            currentCount + 1
-        );
+        adjacencyList.get(fromTaskId).add(toTaskId);
     }
 
-    for (
-        const [
-            taskId,
-            downstreamCount
-        ] of downstreamCounts
-    ) {
-        if (
-            downstreamCount <
-            BOTTLENECK_THRESHOLD
-        ) {
+    // Count all unique unfinished tasks reachable
+    // downstream from each unfinished task.
+    for (const taskId of unfinishedTaskIds) {
+        const visited = new Set([taskId]);
+        const stack = [
+            ...(adjacencyList.get(taskId) || [])
+        ];
+
+        while (stack.length > 0) {
+            const downstreamTaskId = stack.pop();
+
+            if (visited.has(downstreamTaskId)) {
+                continue;
+            }
+
+            visited.add(downstreamTaskId);
+
+            const downstreamDependencies =
+                adjacencyList.get(downstreamTaskId);
+
+            if (!downstreamDependencies) {
+                continue;
+            }
+
+            for (const nextTaskId of downstreamDependencies) {
+                if (!visited.has(nextTaskId)) {
+                    stack.push(nextTaskId);
+                }
+            }
+        }
+
+        // Exclude the source task itself.
+        const downstreamCount = visited.size - 1;
+
+        if (downstreamCount < BOTTLENECK_THRESHOLD) {
             continue;
         }
 

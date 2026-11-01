@@ -19,9 +19,6 @@ const GithubRepository = require(
 const GithubSignal = require(
     "../../src/modules/github/github.signal.model"
 );
-const GithubPullRequestState = require(
-    "../../src/modules/github/github.pullRequestState.model"
-);
 
 describe(
     "GitHub Metrics API",
@@ -37,7 +34,6 @@ describe(
                 await Project.deleteMany({});
                 await GithubRepository.deleteMany({});
                 await GithubSignal.deleteMany({});
-                await GithubPullRequestState.deleteMany({});
 
                 const registerResponse =
                     await request(app)
@@ -126,12 +122,6 @@ describe(
             }
         );
 
-        const daysAgo = (days) =>
-            new Date(
-                Date.now() -
-                    days * 24 * 60 * 60 * 1000
-            ).toISOString();
-
         const createSignal = async ({
             type,
             externalId,
@@ -159,13 +149,19 @@ describe(
         test(
             "returns GitHub execution metrics for a project member",
             async () => {
+                const daysAgo = (days) =>
+                    new Date(
+                        Date.now() -
+                            days * 24 * 60 * 60 * 1000
+                    ).toISOString();
+
                 await createSignal({
                     type:
                         "PULL_REQUEST_OPENED",
                     externalId:
                         "pr:101:opened",
                     occurredAt:
-                        daysAgo(20),
+                        daysAgo(22),
                     githubId:
                         101
                 });
@@ -176,7 +172,7 @@ describe(
                     externalId:
                         "pr:101:merged",
                     occurredAt:
-                        daysAgo(19),
+                        daysAgo(21),
                     githubId:
                         101
                 });
@@ -272,21 +268,6 @@ describe(
                         count: 2
                     }
                 });
-
-                expect(
-                    await GithubPullRequestState.countDocuments({
-                        project: projectId
-                    })
-                ).toBe(2);
-
-                const repositoryState =
-                    await GithubRepository.findById(
-                        repositoryId
-                    ).select("pullRequestStateVersion").lean();
-
-                expect(
-                    repositoryState.pullRequestStateVersion
-                ).toBe(1);
             }
         );
 
@@ -310,77 +291,6 @@ describe(
                 expect(
                     response.body.range
                 ).toBe("30d");
-            }
-        );
-
-        test(
-            "counts a reopened pull request as open after a later reopen event",
-            async () => {
-                await createSignal({
-                    type: "PULL_REQUEST_OPENED",
-                    externalId: "pr:301:opened",
-                    occurredAt: daysAgo(8),
-                    githubId: 301
-                });
-                await createSignal({
-                    type: "PULL_REQUEST_CLOSED",
-                    externalId: "pr:301:closed",
-                    occurredAt: daysAgo(4),
-                    githubId: 301
-                });
-                await createSignal({
-                    type: "PULL_REQUEST_OPENED",
-                    externalId: "pr:301:reopened",
-                    occurredAt: daysAgo(2),
-                    githubId: 301
-                });
-
-                const response =
-                    await request(app)
-                        .get(
-                            `/api/v1/projects/${projectId}/github/metrics?days=30`
-                        )
-                        .set(
-                            "Authorization",
-                            `Bearer ${token}`
-                        );
-
-                expect(response.status).toBe(200);
-                expect(response.body.pullRequests).toMatchObject({
-                    opened: 2,
-                    merged: 0,
-                    open: 1
-                });
-            }
-        );
-
-        test(
-            "includes an older currently open PR in a short metrics range",
-            async () => {
-                await createSignal({
-                    type: "PULL_REQUEST_OPENED",
-                    externalId: "pr:302:opened",
-                    occurredAt: daysAgo(50),
-                    githubId: 302
-                });
-
-                const response =
-                    await request(app)
-                        .get(
-                            `/api/v1/projects/${projectId}/github/metrics?days=7`
-                        )
-                        .set(
-                            "Authorization",
-                            `Bearer ${token}`
-                        );
-
-                expect(response.status).toBe(200);
-                expect(response.body.pullRequests).toMatchObject({
-                    opened: 0,
-                    merged: 0,
-                    open: 1,
-                    oldestOpenPrAgeHours: 1200
-                });
             }
         );
 

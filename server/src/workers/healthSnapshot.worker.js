@@ -1,14 +1,13 @@
 require("dotenv").config();
+
 const {
     Worker
 } = require("bullmq");
+const validateEnvironment = require("../config/validateEnvironment");
 
 const {
     EventEmitter
 } = require("events");
-
-const connectDB =
-    require("../config/db");
 
 const Project =
     require("../modules/projects/project.model");
@@ -178,9 +177,7 @@ const closeHealthSnapshotWorker =
     };
 
 const startHealthSnapshotWorker =
-    async () => {
-        await connectDB();
-
+    () => {
         console.log(
             "FlowForge health snapshot worker running"
         );
@@ -189,22 +186,13 @@ const startHealthSnapshotWorker =
     };
 
 if (require.main === module) {
-    startHealthSnapshotWorker().catch(
-        async (error) => {
-            console.error(
-                "Failed to start health snapshot worker:",
-                error
-            );
-
-            try {
-                await closeHealthSnapshotWorker();
-            } catch {
-                // Worker may not have started.
-            }
-
-            process.exit(1);
-        }
-    );
+    try {
+        validateEnvironment("worker");
+        startHealthSnapshotWorker();
+    } catch (error) {
+        console.error("Failed to start health snapshot worker:", error.message);
+        process.exitCode = 1;
+    }
 
     const shutdown =
         async (signal) => {
