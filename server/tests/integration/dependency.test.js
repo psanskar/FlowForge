@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const request = require("supertest");
 
 const app = require("../../src/app");
@@ -5,6 +6,9 @@ const User = require("../../src/modules/users/user.model");
 const Project = require("../../src/modules/projects/project.model");
 const Task = require("../../src/modules/tasks/task.model");
 const Dependency = require("../../src/modules/dependencies/dependency.model");
+const DependencyGraphLock = require(
+    "../../src/modules/dependencies/dependencyGraphLock.model"
+);
 
 describe("Dependency API", () => {
     let token;
@@ -17,6 +21,7 @@ describe("Dependency API", () => {
         await Project.deleteMany({});
         await Task.deleteMany({});
         await Dependency.deleteMany({});
+        await DependencyGraphLock.deleteMany({});
 
         const registerResponse = await request(app)
             .post("/api/v1/auth/register")
@@ -363,6 +368,49 @@ describe("Dependency API", () => {
             });
 
         expect(dependencyCount).toBe(2);
+    });
+
+    test("serializes concurrent opposite dependencies so they cannot create a cycle", async () => {
+        const responses = await Promise.all([
+            request(app)
+                .post(`/api/v1/projects/${projectId}/dependencies`)
+                .set("Authorization", `Bearer ${token}`)
+                .send({
+                    fromTask: firstTaskId,
+                    toTask: secondTaskId
+                }),
+            request(app)
+                .post(`/api/v1/projects/${projectId}/dependencies`)
+                .set("Authorization", `Bearer ${token}`)
+                .send({
+                    fromTask: secondTaskId,
+                    toTask: firstTaskId
+                })
+        ]);
+
+        expect(responses.map((response) => response.status).sort()).toEqual([
+            201,
+            409
+        ]);
+
+        const rejectedResponse = responses.find(
+            (response) => response.status === 409
+        );
+        expect(rejectedResponse.body.error.code).toBe("DEPENDENCY_CYCLE");
+
+        const dependencies = await Dependency.find({
+            project: projectId
+        }).lean();
+        expect(dependencies).toHaveLength(1);
+
+        const lock = await DependencyGraphLock.findById(projectId).lean();
+        const topologyType = mongoose.connection.client.topology.description.type;
+
+        if (topologyType === "ReplicaSetWithPrimary") {
+            expect(lock.revision).toBeGreaterThan(0);
+        } else {
+            expect(lock).toBeNull();
+        }
     });
 
     test("rejects dependency creation when a task belongs to another project", async () => {

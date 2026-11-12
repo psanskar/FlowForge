@@ -39,6 +39,10 @@ Stop the stack with `docker compose down`. MongoDB and Redis data persist in nam
 
 This Compose file is for local development and demos. It does not configure production TLS, external access controls, backups, or managed secret storage. Do not expose its default MongoDB or Redis services publicly.
 
+## Production deployment status
+
+The production Compose template, deployment/rollback guide, and guarded MongoDB backup/restore scripts are documented in [the deployment runbook](docs/deployment-runbook.md). The template has not been deployed to a public host; it requires a configured domain and managed MongoDB/Redis services.
+
 ## Local setup without Docker
 
 1. Start MongoDB and Redis locally. The default connection strings are `mongodb://127.0.0.1:27017/flowforge` and `redis://127.0.0.1:6379`.
@@ -94,6 +98,7 @@ Open the URL printed by Vite. The API health endpoint is `http://localhost:5000/
 | `JWT_EXPIRES_IN` | API | Optional JWT lifetime; defaults to `1d`. |
 | `CLIENT_URL` | API and Socket.IO | Allowed frontend origin or comma-separated list of origins. Defaults to `http://localhost:5173`. |
 | `GITHUB_WEBHOOK_SECRET` | API | Shared secret configured on the GitHub webhook. Required to accept signed webhook deliveries. |
+| `OPERATIONS_API_KEY` | API | Unique secret of at least 32 characters for the operational queue-status endpoint. Required in production; send it as `X-FlowForge-Ops-Key`. |
 | `VITE_API_BASE_URL` | Client build | API base URL; defaults in the example to `http://localhost:5000/api/v1`. |
 | `MONGO_DATABASE` | Docker Compose | Optional MongoDB database name; defaults to `flowforge`. Use `flowforge_demo` for performance seed data. |
 
@@ -171,7 +176,7 @@ npm run smoke
 
 1. Provide a Linux Docker host with Docker Compose, a DNS name pointing to it, and inbound TCP ports 80 and 443 available for Caddy's certificate issuance and HTTPS traffic.
 2. Configure `MONGO_URI` for a production MongoDB database and `REDIS_URL` for a production Redis instance. Restrict both services to the application host/network and enable provider backups and access controls.
-3. Set `DOMAIN`, `JWT_SECRET`, and `GITHUB_WEBHOOK_SECRET` in the deployment environment. Use unique random secrets of at least 32 characters; do not commit them or put them in the Compose file.
+3. Set `DOMAIN`, `JWT_SECRET`, `GITHUB_WEBHOOK_SECRET`, and `OPERATIONS_API_KEY` in the deployment environment. Use unique random secrets of at least 32 characters; do not commit them or put them in the Compose file.
 4. From the repository root, build and start with `docker compose -f docker-compose.production.yml up --build -d`, then check `docker compose -f docker-compose.production.yml ps` and `https://<DOMAIN>/api/v1/health`.
 5. Configure the GitHub repository webhook to `https://<DOMAIN>/api/v1/github/webhook`, select the events the app supports, and enter the same `GITHUB_WEBHOOK_SECRET`.
 

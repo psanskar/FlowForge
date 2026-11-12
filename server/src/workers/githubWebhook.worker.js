@@ -4,6 +4,9 @@ const {
     Worker
 } = require("bullmq");
 const validateEnvironment = require("../config/validateEnvironment");
+const connectDB = require("../config/db");
+const mongoose = require("mongoose");
+const { startWorkerHeartbeat } = require("../operations/workerHeartbeat");
 
 const {
     EventEmitter
@@ -41,12 +44,18 @@ const processGithubWebhookJob =
         const {
             deliveryId,
             event,
-            payload
+            payload,
+            queueGeneration = 0
         } = job.data;
+        const processingJobId = String(
+            job.id || `${deliveryId}-${queueGeneration}`
+        );
 
         const delivery =
             await markDeliveryProcessing(
-                deliveryId
+                deliveryId,
+                processingJobId,
+                queueGeneration
             );
 
         if (!delivery) {
@@ -63,9 +72,17 @@ const processGithubWebhookJob =
                     payload
                 });
 
-            await markDeliveryProcessed(
-                deliveryId
+            const processedDelivery = await markDeliveryProcessed(
+                deliveryId,
+                processingJobId,
+                queueGeneration
             );
+
+            if (!processedDelivery) {
+                throw new Error(
+                    `Webhook processing claim was lost for ${deliveryId}`
+                );
+            }
 
             return {
                 deliveryId,
@@ -80,11 +97,15 @@ const processGithubWebhookJob =
             if (isFinalAttempt) {
                 await markDeliveryFailed(
                     deliveryId,
-                    error.message
+                    error.message,
+                    processingJobId,
+                    queueGeneration
                 );
             } else {
                 await resetDeliveryToQueued(
-                    deliveryId
+                    deliveryId,
+                    processingJobId,
+                    queueGeneration
                 );
             }
 
@@ -130,6 +151,8 @@ const githubWebhookWorker =
               }
           );
 
+let stopWorkerHeartbeat = async () => {};
+
 githubWebhookWorker.on(
     "completed",
     (job) => {
@@ -148,6 +171,22 @@ githubWebhookWorker.on(
             }`,
             error
         );
+
+        if (job?.data?.deliveryId && job.id) {
+            const queueGeneration = job.data.queueGeneration ?? 0;
+
+            markDeliveryFailed(
+                job.data.deliveryId,
+                error.message,
+                String(job.id),
+                queueGeneration
+            ).catch((failureError) => {
+                console.error(
+                    `Could not persist terminal webhook failure (${job.id}):`,
+                    failureError.message
+                );
+            });
+        }
     }
 );
 
@@ -156,7 +195,15 @@ const closeGithubWebhookWorker =
         await githubWebhookWorker.close();
     };
 
-const startGithubWebhookWorker = () => {
+const startGithubWebhookWorker = async () => {
+    if (process.env.NODE_ENV !== "test") {
+        await githubWebhookWorker.waitUntilReady();
+        stopWorkerHeartbeat = await startWorkerHeartbeat(
+            githubWebhookQueue,
+            "github-worker"
+        );
+    }
+
     console.log(
         "FlowForge GitHub webhook worker running"
     );
@@ -165,39 +212,26 @@ const startGithubWebhookWorker = () => {
 };
 
 if (require.main === module) {
-    try {
-        validateEnvironment("worker");
-        startGithubWebhookWorker();
-    } catch (error) {
-        console.error("Failed to start GitHub webhook worker:", error.message);
-        process.exitCode = 1;
-    }
-
-    const shutdown = async (
-        signal
-    ) => {
-        console.log(
-            `Received ${signal}. Shutting down GitHub webhook worker...`
-        );
-
+    const shutdown = async (signal) => {
+        console.log(`Received ${signal}. Shutting down GitHub webhook worker...`);
+        await stopWorkerHeartbeat();
         await closeGithubWebhookWorker();
-
-        console.log(
-            "GitHub webhook worker stopped"
-        );
-
+        await mongoose.disconnect();
+        console.log("GitHub webhook worker stopped");
         process.exit(0);
     };
 
-    process.on(
-        "SIGINT",
-        () => shutdown("SIGINT")
-    );
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-    process.on(
-        "SIGTERM",
-        () => shutdown("SIGTERM")
-    );
+    (async () => {
+        validateEnvironment("worker");
+        await connectDB();
+        await startGithubWebhookWorker();
+    })().catch((error) => {
+        console.error("Failed to start GitHub webhook worker:", error.message);
+        process.exit(1);
+    });
 }
 
 module.exports = {

@@ -1,4 +1,5 @@
 const User = require("../users/user.model");
+const GithubRepository = require("../github/github.model");
 
 const { loadProjectRiskData } = require("../risks/risk.service");
 const { analyzeProject } = require("../risks/risk.engine");
@@ -62,13 +63,20 @@ const getProjectDashboard = async (
 
     const usersStart = performance.now();
 
-    const users = await User.find({
-        _id: {
-            $in: assigneeIds
-        }
-    })
-        .select("_id name")
-        .lean();
+    const [users, githubRepository] = await Promise.all([
+        User.find({
+            _id: {
+                $in: assigneeIds
+            }
+        })
+            .select("_id name")
+            .lean(),
+        GithubRepository.findOne({
+            project: projectId
+        })
+            .select("fullName")
+            .lean()
+    ]);
 
     const usersEnd = performance.now();
 
@@ -80,7 +88,8 @@ const getProjectDashboard = async (
         tasks,
         milestones,
         risks,
-        users
+        users,
+        githubRepository
     });
 
     const dashboardEnd = performance.now();
@@ -99,7 +108,7 @@ const getProjectDashboard = async (
             healthAggregationMs: Number(
                 (healthEnd - healthStart).toFixed(2)
             ),
-            usersQueryMs: Number(
+            dashboardContextQueriesMs: Number(
                 (usersEnd - usersStart).toFixed(2)
             ),
             dashboardBuildMs: Number(

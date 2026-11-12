@@ -1,22 +1,26 @@
 name: flowforge-production
 
+x-server-environment: &server-environment
+  NODE_ENV: production
+  PORT: 5000
+  MONGO_URI: ${MONGO_URI:?Set MONGO_URI to the managed MongoDB connection string}
+  REDIS_URL: ${REDIS_URL:?Set REDIS_URL to the managed Redis connection string}
+  JWT_SECRET: ${JWT_SECRET:?Set a unique production JWT_SECRET}
+  JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+  GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?Set the GitHub webhook secret}
+  CLIENT_URL: https://${DOMAIN:?Set DOMAIN to the public hostname}
+
 services:
   api:
     build: ./server
     restart: unless-stopped
-    environment: &server-environment
-      NODE_ENV: production
-      PORT: 5000
-      MONGO_URI: ${MONGO_URI:?Set MONGO_URI to the managed MongoDB connection string}
-      REDIS_URL: ${REDIS_URL:?Set REDIS_URL to the managed Redis connection string}
-      JWT_SECRET: ${JWT_SECRET:?Set a unique production JWT_SECRET}
-      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
-      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?Set the GitHub webhook secret}
-      CLIENT_URL: https://${DOMAIN:?Set DOMAIN to the public hostname}
+    environment:
+      <<: *server-environment
+      OPERATIONS_API_KEY: ${OPERATIONS_API_KEY:?Set a unique operations API key of at least 32 characters}
     expose:
       - "5000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/v1/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/v1/ready').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 5

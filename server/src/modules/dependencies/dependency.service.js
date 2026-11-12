@@ -1,22 +1,32 @@
 const mongoose = require("mongoose");
 
 const Dependency = require("./dependency.model");
+const {
+    withDependencyGraphLock
+} = require("./dependencyGraphLock.service");
 const Project = require("../projects/project.model");
 const Task = require("../tasks/task.model");
 
 const wouldCreateCycle = async (
     projectId,
     fromTask,
-    toTask
+    toTask,
+    session = null
 ) => {
     const targetTaskId = fromTask.toString();
     const visited = new Set();
     const stack = [toTask.toString()];
-    const existingEdges = await Dependency.find({
+    let edgeQuery = Dependency.find({
         project: projectId
     })
         .select("fromTask toTask")
         .lean();
+
+    if (session) {
+        edgeQuery = edgeQuery.session(session);
+    }
+
+    const existingEdges = await edgeQuery;
     const adjacency = new Map();
 
     for (const edge of existingEdges) {
@@ -116,33 +126,46 @@ const createDependency = async ({
         throw error;
     }
 
-    const cycleDetected = await wouldCreateCycle(
-        projectId,
-        fromTask,
-        toTask
-    );
-
-    if (cycleDetected) {
-        const error = new Error(
-            "Creating this dependency would create a cycle"
-        );
-
-        error.statusCode = 409;
-        error.code = "DEPENDENCY_CYCLE";
-
-        throw error;
-    }
-
-    // Create the dependency.
     try {
-        const dependency = await Dependency.create({
-            project: projectId,
-            fromTask,
-            toTask,
-            createdBy: userId
-        });
+        return await withDependencyGraphLock(
+            projectId,
+            async ({ session }) => {
+                const cycleDetected = await wouldCreateCycle(
+                    projectId,
+                    fromTask,
+                    toTask,
+                    session
+                );
 
-        return dependency;
+                if (cycleDetected) {
+                    const error = new Error(
+                        "Creating this dependency would create a cycle"
+                    );
+
+                    error.statusCode = 409;
+                    error.code = "DEPENDENCY_CYCLE";
+
+                    throw error;
+                }
+
+                const dependency = {
+                    project: projectId,
+                    fromTask,
+                    toTask,
+                    createdBy: userId
+                };
+
+                if (session) {
+                    const [createdDependency] = await Dependency.create(
+                        [dependency],
+                        { session }
+                    );
+                    return createdDependency;
+                }
+
+                return Dependency.create(dependency);
+            }
+        );
     } catch (error) {
         // MongoDB duplicate-key error.
         if (error.code === 11000) {

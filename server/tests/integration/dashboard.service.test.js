@@ -16,6 +16,10 @@ const GithubSignal = require(
     "../../src/modules/github/github.signal.model"
 );
 
+const GithubRepository = require(
+    "../../src/modules/github/github.model"
+);
+
 const {
     getProjectDashboard
 } = require(
@@ -111,9 +115,19 @@ describe("Dashboard Service", () => {
     });
 
     test("includes GitHub execution risks and health impact in dashboard", async () => {
+        const repository = await GithubRepository.create({
+            project: project._id,
+            owner: "flowforge",
+            repo: "demo",
+            fullName: "flowforge/demo",
+            githubId: 501,
+            defaultBranch: "main",
+            private: false
+        });
+
         await GithubSignal.create({
             project: project._id,
-            repository: "68b0a7e2c9f4a1d3e5f60718",
+            repository: repository._id,
             type: "PULL_REQUEST_OPENED",
             externalId: "pr:501:opened",
             occurredAt: new Date(
@@ -155,6 +169,12 @@ describe("Dashboard Service", () => {
                 title: "Long running dashboard feature",
                 ageDays: 9
             });
+
+        expect(githubRisk.nextAction).toMatchObject({
+            label: "Open pull request",
+            href: "https://github.com/flowforge/demo/pull/501",
+            external: true
+        });
 
         expect(dashboard.health.score)
             .toBe(93);
@@ -209,6 +229,19 @@ describe("Dashboard Service", () => {
 
         expect(overdueRisks[0].daysOverdue)
             .toBe(12);
+
+        expect(overdueRisks[0].context)
+            .toMatchObject({
+                label: "Task",
+                title: "Seriously overdue task",
+                owner: "Dashboard User"
+            });
+
+        expect(overdueRisks[0].nextAction)
+            .toMatchObject({
+                label: "Open task",
+                href: `/app/tasks/${overdueRisks[0].taskId}`
+            });
 
         expect(overdueRisks[1].daysOverdue)
             .toBe(2);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
     Link,
     useNavigate,
@@ -53,36 +53,40 @@ const EditTaskPage = () => {
         isPending
     } = useUpdateTask(taskId);
 
-    const project = projectData?.data ?? null;
+    const project = projectData?.data?.project ?? null;
     const members = project?.members ?? [];
 
-    const [title, setTitle] = useState(null);
-    const [description, setDescription] =
-        useState(null);
-    const [status, setStatus] = useState(null);
-    const [priority, setPriority] = useState(null);
-    const [assignee, setAssignee] = useState(null);
-    const [dueDate, setDueDate] = useState(null);
-    const [progress, setProgress] = useState(null);
+    const [formDraft, setFormDraft] = useState(null);
     const [formError, setFormError] = useState("");
 
-    useEffect(() => {
-        if (!task || title !== null) {
-            return;
-        }
+    const formValues = formDraft ?? {
+        title: task?.title ?? "",
+        description: task?.description ?? "",
+        status: task?.status ?? "todo",
+        priority: task?.priority ?? "medium",
+        assignee: typeof task?.assignee === "object"
+            ? task.assignee?._id ?? ""
+            : task?.assignee ?? "",
+        dueDate: toDateInputValue(task?.dueDate),
+        progress: String(task?.progress ?? 0)
+    };
 
-        setTitle(task.title ?? "");
-        setDescription(task.description ?? "");
-        setStatus(task.status ?? "todo");
-        setPriority(task.priority ?? "medium");
-        setAssignee(
-            typeof task.assignee === "object"
-                ? task.assignee?._id ?? ""
-                : task.assignee ?? ""
-        );
-        setDueDate(toDateInputValue(task.dueDate));
-        setProgress(String(task.progress ?? 0));
-    }, [task, title]);
+    const updateField = (field, value) => {
+        setFormDraft((current) => ({
+            ...(current ?? {
+                title: task?.title ?? "",
+                description: task?.description ?? "",
+                status: task?.status ?? "todo",
+                priority: task?.priority ?? "medium",
+                assignee: typeof task?.assignee === "object"
+                    ? task.assignee?._id ?? ""
+                    : task?.assignee ?? "",
+                dueDate: toDateInputValue(task?.dueDate),
+                progress: String(task?.progress ?? 0)
+            }),
+            [field]: value
+        }));
+    };
 
     const handleSubmit = async (event) => {
         event.preventDefault();
@@ -91,13 +95,13 @@ const EditTaskPage = () => {
         try {
             const payload = {
                 version: task.version,
-                title: title.trim(),
-                description: description.trim(),
-                status,
-                priority,
-                progress: Number(progress),
-                assignee: assignee || null,
-                dueDate: dueDate || null
+                title: formValues.title.trim(),
+                description: formValues.description.trim(),
+                status: formValues.status,
+                priority: formValues.priority,
+                progress: Number(formValues.progress),
+                assignee: formValues.assignee || null,
+                dueDate: formValues.dueDate || null
             };
 
             await updateTask(payload);
@@ -128,7 +132,7 @@ const EditTaskPage = () => {
         isProjectLoading
     ) {
         return (
-            <main className="page-container">
+            <main className="page-container task-form-page">
                 <p>Loading task...</p>
             </main>
         );
@@ -139,7 +143,7 @@ const EditTaskPage = () => {
         !task
     ) {
         return (
-            <main className="page-container">
+            <main className="page-container task-form-page">
                 <h1>Edit Task</h1>
 
                 <p>
@@ -159,7 +163,7 @@ const EditTaskPage = () => {
         !project
     ) {
         return (
-            <main className="page-container">
+            <main className="page-container task-form-page">
                 <h1>Edit Task</h1>
 
                 <p>
@@ -179,8 +183,8 @@ const EditTaskPage = () => {
     }
 
     return (
-        <main className="page-container">
-            <div className="page-header">
+        <main className="page-container task-form-page">
+            <div className="page-header task-form-heading">
                 <div>
                     <p>Project task</p>
 
@@ -216,9 +220,10 @@ const EditTaskPage = () => {
                     <input
                         id="task-title"
                         type="text"
-                        value={title ?? ""}
+                        value={formValues.title}
                         onChange={(event) =>
-                            setTitle(
+                            updateField(
+                                "title",
                                 event.target.value
                             )
                         }
@@ -234,9 +239,10 @@ const EditTaskPage = () => {
 
                     <textarea
                         id="task-description"
-                        value={description ?? ""}
+                        value={formValues.description}
                         onChange={(event) =>
-                            setDescription(
+                            updateField(
+                                "description",
                                 event.target.value
                             )
                         }
@@ -253,9 +259,10 @@ const EditTaskPage = () => {
 
                         <select
                             id="task-status"
-                            value={status ?? "todo"}
+                            value={formValues.status}
                             onChange={(event) =>
-                                setStatus(
+                                updateField(
+                                    "status",
                                     event.target.value
                                 )
                             }
@@ -282,9 +289,10 @@ const EditTaskPage = () => {
 
                         <select
                             id="task-priority"
-                            value={priority ?? "medium"}
+                            value={formValues.priority}
                             onChange={(event) =>
-                                setPriority(
+                                updateField(
+                                    "priority",
                                     event.target.value
                                 )
                             }
@@ -311,9 +319,10 @@ const EditTaskPage = () => {
 
                         <select
                             id="task-assignee"
-                            value={assignee ?? ""}
+                            value={formValues.assignee}
                             onChange={(event) =>
-                                setAssignee(
+                                updateField(
+                                    "assignee",
                                     event.target.value
                                 )
                             }
@@ -349,9 +358,10 @@ const EditTaskPage = () => {
                         <input
                             id="task-due-date"
                             type="date"
-                            value={dueDate ?? ""}
+                            value={formValues.dueDate}
                             onChange={(event) =>
-                                setDueDate(
+                                updateField(
+                                    "dueDate",
                                     event.target.value
                                 )
                             }
@@ -369,9 +379,10 @@ const EditTaskPage = () => {
                             min="0"
                             max="100"
                             step="1"
-                            value={progress ?? "0"}
+                            value={formValues.progress}
                             onChange={(event) =>
-                                setProgress(
+                                updateField(
+                                    "progress",
                                     event.target.value
                                 )
                             }
@@ -400,7 +411,7 @@ const EditTaskPage = () => {
                         className="primary-button"
                         disabled={
                             isPending ||
-                            !(title ?? "").trim()
+                            !formValues.title.trim()
                         }
                     >
                         {isPending

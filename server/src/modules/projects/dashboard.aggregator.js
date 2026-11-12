@@ -45,9 +45,166 @@ const getRiskImpact = (risk) => {
         case "GITHUB_LOW_MERGE_THROUGHPUT":
             return risk.openedCount || 0;
 
+        case "GITHUB_HIGH_PR_CYCLE_TIME":
+            return risk.medianCycleTimeHours || 0;
+
         default:
             return 0;
     }
+};
+
+const getRiskNextAction = (
+    risk,
+    projectId,
+    githubRepository
+) => {
+    const projectPath = `/app/projects/${projectId}`;
+    const taskPath = risk.taskId
+        ? `/app/tasks/${risk.taskId}`
+        : null;
+    const repoName = githubRepository?.fullName;
+    const isValidRepoName =
+        typeof repoName === "string" &&
+        /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repoName);
+    const githubUrl = isValidRepoName
+        ? `https://github.com/${repoName}`
+        : null;
+
+    switch (risk.type) {
+        case "TASK_OVERDUE":
+            return {
+                description: "Agree a recovery date with the assignee, or re-plan the scope and deadline.",
+                label: "Open task",
+                href: taskPath,
+                external: false
+            };
+        case "TASK_STAGNANT":
+            return {
+                description: "Check in with the assignee and decide whether to unblock, reassign, or split the work.",
+                label: "Inspect task",
+                href: taskPath,
+                external: false
+            };
+        case "TASK_BLOCKED":
+            return {
+                description: "Identify the current blocker and assign someone to resolve or escalate it.",
+                label: "Open task",
+                href: taskPath,
+                external: false
+            };
+        case "DEPENDENCY_BOTTLENECK":
+            return {
+                description: "Review the blocking task and its dependent work; split or resequence it if possible.",
+                label: "Review dependencies",
+                href: taskPath,
+                external: false
+            };
+        case "MILESTONE_RISK":
+            return {
+                description: "Review unfinished milestone work and owners, then agree a recovery plan or revised date.",
+                label: "Review milestone",
+                href: `${projectPath}#milestones`,
+                external: false
+            };
+        case "WORKLOAD_IMBALANCE":
+            return {
+                description: "Review this contributor's active assignments and move or defer lower-priority work.",
+                label: "Review assigned tasks",
+                href: risk.userId
+                    ? `${projectPath}/tasks?assignee=${encodeURIComponent(risk.userId)}`
+                    : `${projectPath}/tasks`,
+                external: false
+            };
+        case "GITHUB_AGING_PR":
+            return {
+                description: "Ask the author and reviewers to agree on the next review step or split the pull request.",
+                label: "Open pull request",
+                href: githubUrl
+                    ? risk.prNumber
+                        ? `${githubUrl}/pull/${encodeURIComponent(risk.prNumber)}`
+                        : `${githubUrl}/pulls`
+                    : null,
+                external: Boolean(githubUrl)
+            };
+        case "GITHUB_ISSUE_BACKLOG":
+            return {
+                description: "Triage new issues, close duplicates, and assign an owner and priority to actionable work.",
+                label: "Triage issues",
+                href: githubUrl ? `${githubUrl}/issues` : null,
+                external: Boolean(githubUrl)
+            };
+        case "GITHUB_LOW_MERGE_THROUGHPUT":
+            return {
+                description: "Review open pull requests for missing reviewers, unresolved checks, or oversized changes.",
+                label: "Review open PRs",
+                href: githubUrl ? `${githubUrl}/pulls` : null,
+                external: Boolean(githubUrl)
+            };
+        case "GITHUB_HIGH_PR_CYCLE_TIME":
+            return {
+                description: "Inspect recent pull requests for review delays, large change sets, or release bottlenecks.",
+                label: "Inspect pull requests",
+                href: githubUrl ? `${githubUrl}/pulls` : null,
+                external: Boolean(githubUrl)
+            };
+        default:
+            return null;
+    }
+};
+
+const getRiskContext = (
+    risk,
+    taskById,
+    milestoneById,
+    userById
+) => {
+    if (risk.taskId) {
+        const task = taskById.get(risk.taskId.toString());
+
+        return task
+            ? {
+                label: "Task",
+                title: task.title,
+                owner: task.assignee
+                    ? userById.get(task.assignee.toString())?.name || "Unknown contributor"
+                    : null
+            }
+            : null;
+    }
+
+    if (risk.milestoneId) {
+        const milestone = milestoneById.get(risk.milestoneId.toString());
+
+        return milestone
+            ? {
+                label: "Milestone",
+                title: milestone.name,
+                owner: null
+            }
+            : null;
+    }
+
+    if (risk.userId) {
+        return {
+            label: "Contributor",
+            title: userById.get(risk.userId.toString())?.name || "Unknown contributor",
+            owner: null
+        };
+    }
+
+    if (risk.title || risk.prNumber || risk.githubPrId) {
+        return {
+            label: risk.prNumber
+                ? `Pull request #${risk.prNumber}`
+                : risk.githubPrId
+                    ? "GitHub pull request"
+                    : "GitHub activity",
+            title: risk.title || null,
+            owner: null
+        };
+    }
+
+    return null;
 };
 
 const getTopRisks = (
@@ -219,8 +376,33 @@ const buildDashboardData = ({
     tasks = [],
     milestones = [],
     risks = [],
-    users = []
+    users = [],
+    githubRepository = null
 }) => {
+    const taskById = new Map(
+        tasks.map((task) => [task._id.toString(), task])
+    );
+    const milestoneById = new Map(
+        milestones.map((milestone) => [milestone._id.toString(), milestone])
+    );
+    const userById = new Map(
+        users.map((user) => [user._id.toString(), user])
+    );
+    const topRisks = getTopRisks(risks).map((risk) => ({
+        ...risk,
+        context: getRiskContext(
+            risk,
+            taskById,
+            milestoneById,
+            userById
+        ),
+        nextAction: getRiskNextAction(
+            risk,
+            project._id,
+            githubRepository
+        )
+    }));
+
     return {
         project: {
             id: project._id,
@@ -247,8 +429,7 @@ const buildDashboardData = ({
                 tasks
             ),
 
-        topRisks:
-            getTopRisks(risks),
+        topRisks,
 
         workload:
             getWorkload(

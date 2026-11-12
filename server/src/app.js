@@ -25,6 +25,8 @@ const riskHistoryRoutes =
 
 const githubMetricsRoutes =
     require("./modules/github/github.metrics.routes");
+const operationsRoutes =
+    require("./modules/operations/operations.routes");
 
 const app = express();
 
@@ -61,6 +63,8 @@ app.get("/api/v1/health", (req, res) => {
         }
     });
 });
+
+app.use("/api/v1", operationsRoutes);
 
 app.use("/api/v1/auth", authRoutes);
 

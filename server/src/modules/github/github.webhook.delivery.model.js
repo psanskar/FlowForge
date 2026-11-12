@@ -27,6 +27,23 @@ const githubWebhookDeliverySchema =
                 required: true
             },
 
+            queueGeneration: {
+                type: Number,
+                min: 0,
+                default: 0,
+                required: true
+            },
+
+            processingJobId: {
+                type: String,
+                default: null
+            },
+
+            processingStartedAt: {
+                type: Date,
+                default: null
+            },
+
             receivedAt: {
                 type: Date,
                 default: Date.now,

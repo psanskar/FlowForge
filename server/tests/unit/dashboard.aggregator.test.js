@@ -81,6 +81,31 @@ describe("Dashboard Aggregator", () => {
         expect(result[1].daysUntilDue).toBe(3);
     });
 
+    test("prioritizes higher pull request cycle time within the same severity", () => {
+        const risks = [
+            {
+                type: "GITHUB_HIGH_PR_CYCLE_TIME",
+                severity: "MEDIUM",
+                medianCycleTimeHours: 80
+            },
+            {
+                type: "GITHUB_HIGH_PR_CYCLE_TIME",
+                severity: "MEDIUM",
+                medianCycleTimeHours: 170
+            },
+            {
+                type: "GITHUB_HIGH_PR_CYCLE_TIME",
+                severity: "MEDIUM",
+                medianCycleTimeHours: 120
+            }
+        ];
+
+        const result = getTopRisks(risks);
+
+        expect(result.map((risk) => risk.medianCycleTimeHours))
+            .toEqual([170, 120, 80]);
+    });
+
     test("uses deterministic type ordering when severity and impact are equal", () => {
         const risks = [
             {
@@ -274,5 +299,118 @@ describe("Dashboard Aggregator", () => {
 
         expect(result.workload)
             .toEqual([]);
+    });
+
+    test("provides task, milestone, workload, and GitHub next actions", () => {
+        const risks = [
+            {
+                type: "TASK_OVERDUE",
+                severity: "HIGH",
+                taskId: "task-1",
+                daysOverdue: 4
+            },
+            {
+                type: "MILESTONE_RISK",
+                severity: "HIGH",
+                milestoneId: "milestone-1",
+                daysUntilDue: 2,
+                unfinishedTaskCount: 2
+            },
+            {
+                type: "WORKLOAD_IMBALANCE",
+                severity: "MEDIUM",
+                userId: "user-1",
+                activeTasks: 6,
+                medianWorkload: 2
+            },
+            {
+                type: "GITHUB_AGING_PR",
+                severity: "HIGH",
+                githubPrId: "pr-1",
+                prNumber: 42,
+                ageDays: 15
+            }
+        ];
+
+        const dashboard = buildDashboardData({
+            project: { _id: "project-1" },
+            health: {
+                score: 45,
+                health: "CRITICAL",
+                summary: {}
+            },
+            tasks: [
+                {
+                    _id: "task-1",
+                    title: "Recover delayed API",
+                    assignee: "user-1"
+                }
+            ],
+            milestones: [
+                {
+                    _id: "milestone-1",
+                    name: "Beta release"
+                }
+            ],
+            users: [
+                {
+                    _id: "user-1",
+                    name: "Asha"
+                }
+            ],
+            risks,
+            githubRepository: {
+                fullName: "flowforge/demo"
+            }
+        });
+
+        const actionsByType = Object.fromEntries(
+            dashboard.topRisks.map((risk) => [
+                risk.type,
+                risk.nextAction
+            ])
+        );
+
+        expect(actionsByType.TASK_OVERDUE).toMatchObject({
+            label: "Open task",
+            href: "/app/tasks/task-1",
+            external: false
+        });
+        expect(
+            dashboard.topRisks.find(
+                (risk) => risk.type === "TASK_OVERDUE"
+            ).context
+        ).toEqual({
+            label: "Task",
+            title: "Recover delayed API",
+            owner: "Asha"
+        });
+        expect(
+            dashboard.topRisks.find(
+                (risk) => risk.type === "MILESTONE_RISK"
+            ).context
+        ).toEqual({
+            label: "Milestone",
+            title: "Beta release",
+            owner: null
+        });
+        expect(actionsByType.MILESTONE_RISK.href)
+            .toBe("/app/projects/project-1#milestones");
+        expect(actionsByType.WORKLOAD_IMBALANCE.href)
+            .toBe("/app/projects/project-1/tasks?assignee=user-1");
+        expect(actionsByType.GITHUB_AGING_PR).toMatchObject({
+            label: "Open pull request",
+            href: "https://github.com/flowforge/demo/pull/42",
+            external: true
+        });
+        expect(
+            dashboard.topRisks.find(
+                (risk) => risk.type === "GITHUB_AGING_PR"
+            ).context
+        ).toEqual({
+            label: "Pull request #42",
+            title: null,
+            owner: null
+        });
     });
 });

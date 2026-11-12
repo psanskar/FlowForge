@@ -2,7 +2,8 @@ import { useState } from "react";
 import {
     Link,
     useNavigate,
-    useParams
+    useParams,
+    useSearchParams
 } from "react-router-dom";
 
 import useTasks from "../hooks/useTasks";
@@ -49,13 +50,16 @@ const formatDate = (date) => {
 const ProjectTasksPage = () => {
     const { projectId } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
 
     useProjectRealtime(projectId);
 
     const [page, setPage] = useState(1);
     const [status, setStatus] = useState("");
     const [priority, setPriority] = useState("");
-    const [assignee, setAssignee] = useState("");
+    const [assignee, setAssignee] = useState(
+        () => searchParams.get("assignee") || ""
+    );
     const [sort, setSort] = useState("dueDate");
 
     const {
@@ -137,7 +141,7 @@ const ProjectTasksPage = () => {
         isTasksLoading
     ) {
         return (
-            <main className="page-container">
+            <main className="page-container project-tasks-page">
                 <p>Loading tasks...</p>
             </main>
         );
@@ -148,7 +152,7 @@ const ProjectTasksPage = () => {
         isTasksError
     ) {
         return (
-            <main className="page-container">
+            <main className="page-container project-tasks-page">
                 <h1>Project Tasks</h1>
 
                 <p>
@@ -160,8 +164,8 @@ const ProjectTasksPage = () => {
     }
 
     return (
-        <main className="page-container">
-            <div className="page-header">
+        <main className="page-container project-tasks-page">
+            <div className="page-header project-tasks-heading">
                 <div>
                     <h1>Project Tasks</h1>
 
@@ -195,7 +199,7 @@ const ProjectTasksPage = () => {
                 </div>
             </div>
 
-            <div className="dashboard-card">
+            <div className="dashboard-card task-filter-card">
                 <div className="task-filters">
                     <div>
                         <label htmlFor="task-status">
@@ -336,7 +340,7 @@ const ProjectTasksPage = () => {
             </div>
 
             {tasks.length === 0 ? (
-                <div className="dashboard-card">
+                <div className="dashboard-card task-results-empty">
                     <h2>No tasks found</h2>
 
                     <p>
@@ -346,7 +350,7 @@ const ProjectTasksPage = () => {
                     </p>
                 </div>
             ) : (
-                <div className="dashboard-card">
+                <div className="dashboard-card task-results-card">
                     <div className="task-list">
                         {tasks.map((task) => (
                             <article

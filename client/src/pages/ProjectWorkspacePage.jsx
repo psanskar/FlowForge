@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import useProject from "../hooks/useProject";
 import useProjectDashboard from "../hooks/useProjectDashboard";
@@ -17,6 +17,46 @@ const formatRiskType = (type) => {
         .replace(/\b\w/g, (character) =>
             character.toUpperCase()
         );
+};
+
+const formatTrendEvidence = (signal) => {
+    const evidence = signal.evidence || {};
+    const formatPercent = (ratio) => `${Math.round(ratio * 100)}%`;
+
+    switch (signal.type) {
+        case "HEALTH_DECLINING":
+            return `Health score changed from ${evidence.previous} to ${evidence.current} (${evidence.change} points).`;
+        case "BLOCKED_WORK_INCREASING":
+        case "OVERDUE_WORK_INCREASING":
+        case "RISK_EXPOSURE_INCREASING":
+            return `Count increased from ${evidence.previous} to ${evidence.current} (+${evidence.change}).`;
+        case "BLOCKED_WORK_RATIO_INCREASING":
+        case "OVERDUE_WORK_RATIO_INCREASING":
+            return `Share increased from ${formatPercent(evidence.previousRatio)} to ${formatPercent(evidence.currentRatio)} (+${(evidence.change * 100).toFixed(1)} percentage points).`;
+        case "COMPLETION_VELOCITY_DECLINING":
+        case "MILESTONE_PROGRESS_SLOWING":
+            return `Average progress per snapshot fell from ${evidence.previousAverage.toFixed(2)} to ${evidence.recentAverage.toFixed(2)} (${Math.round(evidence.declineRatio * 100)}% decline).`;
+        case "RISK_PERSISTENCE_INCREASING":
+            return `${evidence.persistentRiskCount} active risks appeared in at least 3 detections; ${evidence.highPersistenceRiskCount} persisted for at least 5 detections.`;
+        default:
+            return "Execution data changed enough to trigger this trend signal.";
+    }
+};
+
+const getTrendNextStep = (type) => {
+    const actions = {
+        HEALTH_DECLINING: "Review the highest-severity current risks and assign an owner and due date to each response.",
+        BLOCKED_WORK_INCREASING: "Review blocked tasks and resolve the most common blocker first.",
+        OVERDUE_WORK_INCREASING: "Reconfirm owners and dates for overdue work; adjust scope where the plan is no longer realistic.",
+        BLOCKED_WORK_RATIO_INCREASING: "Remove blockers from unfinished work before adding more commitments.",
+        OVERDUE_WORK_RATIO_INCREASING: "Re-plan the remaining overdue work and communicate a credible delivery date.",
+        COMPLETION_VELOCITY_DECLINING: "Check aging in-progress tasks, review capacity, and reduce work in progress if needed.",
+        MILESTONE_PROGRESS_SLOWING: "Review unfinished milestone tasks with their owners and revise the delivery plan.",
+        RISK_EXPOSURE_INCREASING: "Prioritize newly elevated risks and agree on a mitigation owner for each.",
+        RISK_PERSISTENCE_INCREASING: "Revisit repeated risks and decide whether to remove the blocker or change the mitigation plan."
+    };
+
+    return actions[type] || "Review the current project risks and agree on a next action.";
 };
 
 const formatDate = (date) => {
@@ -93,7 +133,9 @@ const getHealthStatusClass = (status) => {
 };
 
 const HealthTrendSection = ({
-    snapshots = []
+    snapshots = [],
+    signals = [],
+    projectId
 }) => {
     const sortedSnapshots = [
         ...snapshots
@@ -304,6 +346,41 @@ const HealthTrendSection = ({
                     </p>
                 </div>
             )}
+
+            {signals.length > 0 && (
+                <div className="dashboard-trend-signals">
+                    <div className="dashboard-trend-signals-heading">
+                        <div>
+                            <h3>Execution changes to review</h3>
+                            <p>These signals compare recent snapshots. Use the evidence to decide what needs attention.</p>
+                        </div>
+                        <span>{signals.length} signals</span>
+                    </div>
+                    <div className="dashboard-trend-signal-list">
+                        {signals.map((signal) => (
+                            <article
+                                className="dashboard-trend-signal"
+                                key={signal.type}
+                            >
+                                <div className="dashboard-trend-signal-title">
+                                    <strong>{formatRiskType(signal.type)}</strong>
+                                    <span className={`dashboard-risk-severity dashboard-risk-severity-${String(signal.severity || "medium").toLowerCase()}`}>
+                                        {signal.severity}
+                                    </span>
+                                </div>
+                                <p>{formatTrendEvidence(signal)}</p>
+                                <div className="dashboard-trend-signal-action">
+                                    <strong>Next step</strong>
+                                    <span>{getTrendNextStep(signal.type)}</span>
+                                </div>
+                                <Link to={`/app/projects/${projectId}#execution-risks`}>
+                                    Review current risks
+                                </Link>
+                            </article>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -347,6 +424,8 @@ const ProjectWorkspacePage = () => {
     const snapshots =
         healthTrendData?.data?.snapshots ||
         [];
+    const trendSignals =
+        healthTrendData?.data?.signals || [];
 
     if (
         isProjectLoading ||
@@ -455,10 +534,18 @@ const ProjectWorkspacePage = () => {
                 ),
             0
         ) || 0;
+    const totalTasks = taskSummary?.totalTasks ?? 0;
+    const completedTasks = taskSummary?.completedTasks ?? 0;
+    const taskCompletion = totalTasks
+        ? Math.round((completedTasks / totalTasks) * 100)
+        : 0;
+    const healthScore = Number.isFinite(Number(health?.score))
+        ? Math.min(100, Math.max(0, Number(health.score)))
+        : 0;
 
     return (
-        <section className="page-section">
-            <div className="page-heading">
+        <section className="page-section workspace-page">
+            <div className="page-heading workspace-heading">
                 <div>
                     <span className="page-eyebrow">
                         Project workspace
@@ -472,6 +559,12 @@ const ProjectWorkspacePage = () => {
                         {project.description ||
                             "No project description provided."}
                     </p>
+                    <div className="workspace-heading-meta">
+                        <span className="workspace-project-status">
+                            {project.status || "Active"}
+                        </span>
+                        <span>Execution overview</span>
+                    </div>
                 </div>
 
                 <button
@@ -487,20 +580,28 @@ const ProjectWorkspacePage = () => {
                 </button>
             </div>
 
-            <div className="dashboard-health-grid">
-                <div className="dashboard-card dashboard-health-card">
+            <div className="dashboard-health-grid workspace-metrics">
+                <div className="dashboard-card dashboard-health-card workspace-health-card">
                     <span className="dashboard-card-label">
                         Risk-adjusted health
                     </span>
 
-                    <p className="dashboard-health-score">
-                        {health?.score ?? "—"}
-                    </p>
-
-                    <span className="dashboard-health-status">
-                        {health?.health ??
-                            "Unknown"}
-                    </span>
+                    <div className="workspace-health-content">
+                        <div
+                            className="workspace-health-ring"
+                            style={{ "--health-score": `${healthScore}%` }}
+                        >
+                            <span>{health?.score ?? "—"}</span>
+                        </div>
+                        <div>
+                            <span className="dashboard-health-status">
+                                {health?.health ?? "Unknown"}
+                            </span>
+                            <p className="dashboard-stat-description">
+                                Current execution signal
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <div className="dashboard-card">
@@ -514,8 +615,15 @@ const ProjectWorkspacePage = () => {
                     </p>
 
                     <p className="dashboard-stat-description">
-                        Total project tasks
+                        {completedTasks} completed ·{" "}
+                        {taskSummary?.blockedTasks ?? 0} blocked
                     </p>
+                    <div
+                        className="workspace-task-progress"
+                        aria-label={`${taskCompletion}% of tasks completed`}
+                    >
+                        <span style={{ width: `${taskCompletion}%` }} />
+                    </div>
                 </div>
 
                 <div className="dashboard-card">
@@ -551,6 +659,8 @@ const ProjectWorkspacePage = () => {
 
             <HealthTrendSection
                 snapshots={snapshots}
+                signals={trendSignals}
+                projectId={projectId}
             />
 
             {isHealthTrendError && (
@@ -570,17 +680,21 @@ const ProjectWorkspacePage = () => {
                 </div>
             )}
 
-            <div className="dashboard-section">
+            <div
+                className="dashboard-section workspace-risk-section"
+                id="execution-risks"
+            >
                 <div className="dashboard-section-header">
-                    <h2>
-                        Execution risks
-                    </h2>
+                    <div>
+                        <h2>Execution risks</h2>
 
-                    <p>
-                        The most significant signals
-                        detected in the current project
-                        state.
-                    </p>
+                        <p>
+                            The most significant signals detected in the current project state.
+                        </p>
+                    </div>
+                    <span className="workspace-risk-count">
+                        {topRisks?.length ?? 0} signals
+                    </span>
                 </div>
 
                 {topRisks?.length ? (
@@ -588,7 +702,7 @@ const ProjectWorkspacePage = () => {
                         {topRisks.map((risk) => (
                             <article
                                 key={risk.id}
-                                className="dashboard-risk-card"
+                                className={`dashboard-risk-card workspace-risk-card workspace-risk-${String(risk.severity || "low").toLowerCase()}`}
                             >
                                 <div className="dashboard-risk-header">
                                     <span className="dashboard-risk-type">
@@ -605,6 +719,16 @@ const ProjectWorkspacePage = () => {
                                 <p className="dashboard-risk-message">
                                     {risk.message}
                                 </p>
+
+                                {risk.context && (
+                                    <p className="dashboard-risk-context">
+                                        <strong>{risk.context.label}:</strong>{" "}
+                                        {risk.context.title || "Untitled"}
+                                        {risk.context.owner && (
+                                            <span> · Owner: {risk.context.owner}</span>
+                                        )}
+                                    </p>
+                                )}
 
                                 {risk.evidence
                                     ?.length > 0 && (
@@ -625,6 +749,36 @@ const ProjectWorkspacePage = () => {
                                         )}
                                     </ul>
                                 )}
+
+                                {risk.nextAction && (
+                                    <div className="dashboard-risk-next-action">
+                                        <div>
+                                            <strong>Suggested next step</strong>
+                                            <p>{risk.nextAction.description}</p>
+                                        </div>
+                                        {risk.nextAction.href && (
+                                            risk.nextAction.external ? (
+                                                <a
+                                                    className="dashboard-risk-action-link"
+                                                    href={risk.nextAction.href}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                >
+                                                    {risk.nextAction.label}
+                                                    <span aria-hidden="true">↗</span>
+                                                </a>
+                                            ) : (
+                                                <Link
+                                                    className="dashboard-risk-action-link"
+                                                    to={risk.nextAction.href}
+                                                >
+                                                    {risk.nextAction.label}
+                                                    <span aria-hidden="true">→</span>
+                                                </Link>
+                                            )
+                                        )}
+                                    </div>
+                                )}
                             </article>
                         ))}
                     </div>
@@ -635,7 +789,7 @@ const ProjectWorkspacePage = () => {
                 )}
             </div>
 
-            <div className="dashboard-section">
+            <div className="dashboard-section" id="milestones">
                 <div className="dashboard-section-header">
                     <h2>
                         Milestone progress

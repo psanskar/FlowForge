@@ -378,7 +378,7 @@ describe("GitHub webhook API", () => {
     );
 
     test(
-        "returns 503 and marks delivery FAILED when webhook queueing fails",
+        "keeps a failed-to-enqueue delivery recoverable for GitHub redelivery",
         async () => {
             const deliveryId =
                 "delivery-queue-failure";
@@ -459,15 +459,21 @@ describe("GitHub webhook API", () => {
                     delivery
                 ).not.toBeNull();
 
-                expect(
-                    delivery.status
-                ).toBe("FAILED");
+                expect(delivery.status).toBe("QUEUED");
 
-                expect(
-                    delivery.failureReason
-                ).toBe(
-                    "Redis unavailable"
-                );
+                expect(enqueueSpy).toHaveBeenCalledTimes(1);
+                enqueueSpy.mockRestore();
+                const retryResponse = await request(app)
+                    .post("/api/v1/github/webhook")
+                    .set("X-Hub-Signature-256", signature)
+                    .set("X-GitHub-Event", "push")
+                    .set("X-GitHub-Delivery", deliveryId)
+                    .set("Content-Type", "application/json")
+                    .send(body);
+
+                expect(retryResponse.status).toBe(200);
+                expect(retryResponse.body.data.duplicate).toBe(true);
+                expect(retryResponse.body.data.queued).toBe(true);
             } finally {
                 enqueueSpy.mockRestore();
             }

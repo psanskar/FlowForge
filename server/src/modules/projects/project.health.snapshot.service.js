@@ -79,17 +79,55 @@ const calculateMilestoneSummary = (
 };
 
 const formatSnapshotDate = (date) => {
-    const year = date.getFullYear();
+    const parts = new Intl.DateTimeFormat(
+        "en-CA",
+        {
+            timeZone: "Asia/Kolkata",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit"
+        }
+    ).formatToParts(date);
 
-    const month = String(
-        date.getMonth() + 1
-    ).padStart(2, "0");
+    const values = Object.fromEntries(
+        parts
+            .filter((part) => part.type !== "literal")
+            .map((part) => [part.type, part.value])
+    );
 
-    const day = String(
-        date.getDate()
-    ).padStart(2, "0");
+    return `${values.year}-${values.month}-${values.day}`;
+};
 
-    return `${year}-${month}-${day}`;
+const resolveSnapshotDate = (snapshotDate, capturedAt) => {
+    if (snapshotDate === undefined || snapshotDate === null) {
+        return formatSnapshotDate(capturedAt);
+    }
+
+    if (
+        typeof snapshotDate !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(snapshotDate)
+    ) {
+        const error = new Error("Snapshot date must use YYYY-MM-DD format");
+        error.statusCode = 400;
+        error.code = "INVALID_SNAPSHOT_DATE";
+        throw error;
+    }
+
+    const [year, month, day] = snapshotDate.split("-").map(Number);
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+
+    if (
+        parsed.getUTCFullYear() !== year ||
+        parsed.getUTCMonth() !== month - 1 ||
+        parsed.getUTCDate() !== day
+    ) {
+        const error = new Error("Snapshot date must be a valid calendar date");
+        error.statusCode = 400;
+        error.code = "INVALID_SNAPSHOT_DATE";
+        throw error;
+    }
+
+    return snapshotDate;
 };
 
 const buildSnapshotData = ({
@@ -97,7 +135,8 @@ const buildSnapshotData = ({
     milestones = [],
     risks = [],
     health,
-    capturedAt
+    capturedAt,
+    snapshotDate
 }) => {
     if (!health) {
         throw new Error(
@@ -146,7 +185,7 @@ const buildSnapshotData = ({
             ),
 
         snapshotDate:
-            formatSnapshotDate(capturedAt),
+            resolveSnapshotDate(snapshotDate, capturedAt),
 
         capturedAt
     };
@@ -176,6 +215,7 @@ const loadPreviousActiveRisks =
             async ({
                 projectId,
                 userId,
+                snapshotDate: requestedSnapshotDate,
                 now = new Date()
             }) => {
                 if (
@@ -193,8 +233,10 @@ const loadPreviousActiveRisks =
             throw error;
         }
 
-        const snapshotDate =
-            formatSnapshotDate(now);
+        const snapshotDate = resolveSnapshotDate(
+            requestedSnapshotDate,
+            now
+        );
 
         /*
          * If this day's snapshot already exists,
@@ -270,7 +312,8 @@ const loadPreviousActiveRisks =
                 milestones,
                 risks,
                 health,
-                capturedAt: now
+                capturedAt: now,
+                snapshotDate
             });
 
         try {
@@ -309,6 +352,7 @@ module.exports = {
     countRisksBySeverity,
     calculateMilestoneSummary,
     formatSnapshotDate,
+    resolveSnapshotDate,
     buildSnapshotData,
     loadPreviousActiveRisks,
     captureProjectHealthSnapshot

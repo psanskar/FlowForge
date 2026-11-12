@@ -94,15 +94,6 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     services:
-      mongodb:
-        image: mongo:8.0.30
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
       redis:
         image: redis:7-alpine
         ports:
@@ -118,8 +109,28 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       JWT_SECRET: flowforge-ci-test-secret-32-characters-minimum
       GITHUB_WEBHOOK_SECRET: flowforge-ci-webhook-secret-32-characters-minimum
+      OPERATIONS_API_KEY: flowforge-ci-operations-key-32-characters-minimum
     steps:
       - uses: actions/checkout@v7
+
+      - name: Start transactional MongoDB replica set
+        run: |
+          docker run -d --name flowforge-test-mongo -p 27017:27017 mongo:8.0.30 mongod --replSet rs0 --bind_ip_all
+          for attempt in $(seq 1 30); do
+            if docker exec flowforge-test-mongo mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec flowforge-test-mongo mongosh --quiet --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "localhost:27017"}]})'
+          for attempt in $(seq 1 30); do
+            if docker exec flowforge-test-mongo mongosh --quiet --eval 'db.hello().isWritablePrimary' | grep -q true; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "MongoDB replica set did not become primary" >&2
+          exit 1
 
       - uses: actions/setup-node@v7
         with:

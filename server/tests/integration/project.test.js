@@ -65,6 +65,17 @@ describe("Project API", () => {
 
         expect(databaseProject).not.toBeNull();
         expect(databaseProject.name).toBe("Integration Test Project");
+
+        const detailResponse = await request(app)
+            .get(`/api/v1/projects/${project._id}`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(detailResponse.status).toBe(200);
+        expect(detailResponse.body.data.project.members[0].user)
+            .toMatchObject({
+                _id: userId,
+                name: "Project Test User"
+            });
     });
 
     test("rejects project creation without authentication", async () => {
@@ -125,6 +136,41 @@ describe("Project API", () => {
         expect(pagination.hasNextPage).toBe(false);
         expect(pagination.hasPreviousPage).toBe(false);
     });
+
+    test("does not expose a project to a user who is not a member", async () => {
+        const projectResponse = await request(app)
+            .post("/api/v1/projects")
+            .set("Authorization", `Bearer ${token}`)
+            .send({ name: "Private Project" });
+
+        expect(projectResponse.status).toBe(201);
+
+        const outsiderResponse = await request(app)
+            .post("/api/v1/auth/register")
+            .send({
+                name: "Outside User",
+                email: "outside-project-test@flowforge.local",
+                password: "TestPassword123"
+            });
+
+        expect(outsiderResponse.status).toBe(201);
+        const outsiderToken = outsiderResponse.body.data.token;
+
+        const getResponse = await request(app)
+            .get(`/api/v1/projects/${projectResponse.body.data.project._id}`)
+            .set("Authorization", `Bearer ${outsiderToken}`);
+
+        expect(getResponse.status).toBe(404);
+        expect(getResponse.body.error.code).toBe("PROJECT_NOT_FOUND");
+
+        const listResponse = await request(app)
+            .get("/api/v1/projects")
+            .set("Authorization", `Bearer ${outsiderToken}`);
+
+        expect(listResponse.status).toBe(200);
+        expect(listResponse.body.data.projects).toHaveLength(0);
+    });
+
     test("paginates projects consistently", async () => {
         for (const name of ["Project One", "Project Two", "Project Three"]) {
             await request(app)

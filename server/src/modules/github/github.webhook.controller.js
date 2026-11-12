@@ -6,7 +6,7 @@ const {
     getDelivery,
     recordDelivery,
     claimFailedDelivery,
-    markQueuedDeliveryFailed
+    recoverProcessingDelivery
 } = require("./github.webhook.delivery.service");
 
 const {
@@ -120,6 +120,7 @@ const handleGithubWebhook =
                     deliveryId,
                     event
                 });
+            const isRedelivery = !delivery;
 
             /*
              * recordDelivery() returns null when
@@ -143,6 +144,16 @@ const handleGithubWebhook =
                     throw error;
                 }
 
+                if (delivery.event !== event) {
+                    return res.status(409).json({
+                        success: false,
+                        error: {
+                            code: "GITHUB_WEBHOOK_DELIVERY_CONFLICT",
+                            message: "Delivery ID was already used for another event"
+                        }
+                    });
+                }
+
                 /*
                  * Already successfully processed.
                  */
@@ -161,41 +172,44 @@ const handleGithubWebhook =
                 }
 
                 /*
-                 * Delivery is already waiting
-                 * in the queue.
-                 */
-                if (
-                    delivery.status ===
-                    "QUEUED"
-                ) {
-                    return res.status(200).json({
-                        success: true,
-                        data: {
-                            received: true,
-                            duplicate: true,
-                            queued: true,
-                            deliveryId
-                        }
-                    });
-                }
-
-                /*
                  * Worker is currently processing
-                 * this delivery.
+                 * this delivery. If the queue job no longer exists, recover
+                 * the durable MongoDB record and enqueue a new generation.
                  */
                 if (
                     delivery.status ===
                     "PROCESSING"
                 ) {
-                    return res.status(200).json({
-                        success: true,
-                        data: {
-                            received: true,
-                            duplicate: true,
-                            processing: true,
-                            deliveryId
-                        }
-                    });
+                    const processingJob = delivery.processingJobId
+                        ? await githubWebhookQueue.githubWebhookQueue.getJob(
+                              delivery.processingJobId
+                          )
+                        : null;
+                    const processingJobState = processingJob
+                        ? await processingJob.getState()
+                        : null;
+
+                    if (
+                        processingJob &&
+                        ["waiting", "active", "delayed", "paused", "waiting-children"]
+                            .includes(processingJobState)
+                    ) {
+                        return res.status(200).json({
+                            success: true,
+                            data: {
+                                received: true,
+                                duplicate: true,
+                                processing: true,
+                                deliveryId
+                            }
+                        });
+                    }
+
+                    delivery = await recoverProcessingDelivery({
+                        deliveryId,
+                        processingJobId: delivery.processingJobId,
+                        queueGeneration: delivery.queueGeneration ?? 0
+                    }) || await getDelivery(deliveryId);
                 }
 
                 /*
@@ -208,17 +222,16 @@ const handleGithubWebhook =
                     delivery.status ===
                     "FAILED"
                 ) {
-                    delivery =
-                        await claimFailedDelivery({
+                    delivery = await claimFailedDelivery({
                             deliveryId,
                             event
-                        });
+                        }) || await getDelivery(deliveryId);
 
                     /*
                      * Another request may have
                      * claimed it first.
                      */
-                    if (!delivery) {
+                    if (!delivery || delivery.status === "FAILED") {
                         return res.status(200).json({
                             success: true,
                             data: {
@@ -229,6 +242,29 @@ const handleGithubWebhook =
                         });
                     }
                 }
+
+                if (delivery.status === "PROCESSED") {
+                    return res.status(200).json({
+                        success: true,
+                        data: {
+                            received: true,
+                            duplicate: true,
+                            deliveryId
+                        }
+                    });
+                }
+
+                if (delivery.status === "PROCESSING") {
+                    return res.status(200).json({
+                        success: true,
+                        data: {
+                            received: true,
+                            duplicate: true,
+                            processing: true,
+                            deliveryId
+                        }
+                    });
+                }
             }
 
             /*
@@ -238,16 +274,12 @@ const handleGithubWebhook =
             try {
                 await githubWebhookQueue.enqueueGithubWebhook({
                     deliveryId,
-                    event,
+                    event: delivery.event,
                     payload,
-                    jobId: `${deliveryId}:retry:${Date.now()}`
+                    queueGeneration: delivery.queueGeneration ?? 0,
+                    jobId: `${deliveryId}-${delivery.queueGeneration ?? 0}`
                 });
             } catch (error) {
-                await markQueuedDeliveryFailed(
-                    deliveryId,
-                    error.message
-                );
-
                 const queueError = new Error(
                     "GitHub webhook could not be queued"
                 );
@@ -260,10 +292,11 @@ const handleGithubWebhook =
             }
 
 
-            return res.status(202).json({
+            return res.status(isRedelivery ? 200 : 202).json({
                 success: true,
                 data: {
                     received: true,
+                    ...(isRedelivery ? { duplicate: true } : {}),
                     queued: true,
                     processed: false,
                     deliveryId,

@@ -30,12 +30,12 @@ const CreateMilestonePage = () => {
         }
     };
 
-    if (isLoading) return <main className="page-container"><p>Loading project...</p></main>;
-    if (!project) return <main className="page-container"><h1>Create milestone</h1><p>{error?.message ?? "Unable to load this project."}</p><Link to={`/app/projects/${projectId}`}>Back to project</Link></main>;
+    if (isLoading) return <main className="page-container task-form-page"><p>Loading project...</p></main>;
+    if (!project) return <main className="page-container task-form-page"><h1>Create milestone</h1><p>{error?.message ?? "Unable to load this project."}</p><Link to={`/app/projects/${projectId}`}>Back to project</Link></main>;
 
     return (
-        <main className="page-container">
-            <div className="page-header">
+        <main className="page-container task-form-page">
+            <div className="page-header task-form-heading">
                 <div><p>Project milestone</p><h1>Create milestone</h1><p>Add a delivery point to <strong>{project.name}</strong>.</p></div>
                 <Link to={`/app/projects/${projectId}`}>Back to project</Link>
             </div>

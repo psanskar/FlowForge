@@ -25,7 +25,7 @@ const CreateTaskPage = () => {
         isPending
     } = useCreateTask(projectId);
 
-    const project = projectData?.data ?? null;
+    const project = projectData?.data?.project ?? null;
     const members = project?.members ?? [];
     const { data: dashboardData } = useProjectDashboard(projectId);
     const milestones = dashboardData?.data?.milestones ?? [];
@@ -87,7 +87,7 @@ const CreateTaskPage = () => {
 
     if (isProjectLoading) {
         return (
-            <main className="page-container">
+            <main className="page-container task-form-page">
                 <p>Loading project...</p>
             </main>
         );
@@ -95,7 +95,7 @@ const CreateTaskPage = () => {
 
     if (isProjectError || !project) {
         return (
-            <main className="page-container">
+            <main className="page-container task-form-page">
                 <h1>Create Task</h1>
 
                 <p>
@@ -115,8 +115,8 @@ const CreateTaskPage = () => {
     }
 
     return (
-        <main className="page-container">
-            <div className="page-header">
+        <main className="page-container task-form-page">
+            <div className="page-header task-form-heading">
                 <div>
                     <p>Project task</p>
 

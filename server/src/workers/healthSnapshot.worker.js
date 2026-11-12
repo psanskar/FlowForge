@@ -4,6 +4,9 @@ const {
     Worker
 } = require("bullmq");
 const validateEnvironment = require("../config/validateEnvironment");
+const connectDB = require("../config/db");
+const mongoose = require("mongoose");
+const { startWorkerHeartbeat } = require("../operations/workerHeartbeat");
 
 const {
     EventEmitter
@@ -26,6 +29,10 @@ const {
         "../queues/healthSnapshot.queue"
     );
 
+const {
+    dispatchHealthSnapshots
+} = require("../queues/healthSnapshot.scheduler");
+
 const connection = {
     url:
         process.env.REDIS_URL ||
@@ -34,6 +41,10 @@ const connection = {
 
 const processHealthSnapshotJob =
     async (job) => {
+        if (job.name === "dispatch-health-snapshots") {
+            return dispatchHealthSnapshots();
+        }
+
         const {
             projectId,
             snapshotDate
@@ -84,7 +95,8 @@ const processHealthSnapshotJob =
                 {
                     projectId,
                     userId:
-                        project.owner
+                        project.owner,
+                    snapshotDate
                 }
             );
 
@@ -144,6 +156,8 @@ const healthSnapshotWorker =
               }
           );
 
+let stopWorkerHeartbeat = async () => {};
+
 healthSnapshotWorker.processFn =
     processHealthSnapshotJob;
 
@@ -176,49 +190,45 @@ const closeHealthSnapshotWorker =
         await healthSnapshotWorker.close();
     };
 
-const startHealthSnapshotWorker =
-    () => {
+const startHealthSnapshotWorker = async () => {
+    if (process.env.NODE_ENV !== "test") {
+        await healthSnapshotWorker.waitUntilReady();
+        stopWorkerHeartbeat = await startWorkerHeartbeat(
+            healthSnapshotQueue,
+            "health-worker"
+        );
+    }
+
         console.log(
             "FlowForge health snapshot worker running"
         );
 
         return healthSnapshotWorker;
-    };
+};
 
 if (require.main === module) {
-    try {
+    const shutdown = async (signal) => {
+        console.log(
+            `Received ${signal}. Shutting down health snapshot worker...`
+        );
+        await stopWorkerHeartbeat();
+        await closeHealthSnapshotWorker();
+        await mongoose.disconnect();
+        console.log("Health snapshot worker stopped");
+        process.exit(0);
+    };
+
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+    (async () => {
         validateEnvironment("worker");
-        startHealthSnapshotWorker();
-    } catch (error) {
+        await connectDB();
+        await startHealthSnapshotWorker();
+    })().catch((error) => {
         console.error("Failed to start health snapshot worker:", error.message);
-        process.exitCode = 1;
-    }
-
-    const shutdown =
-        async (signal) => {
-            console.log(
-                `Received ${signal}. ` +
-                "Shutting down health snapshot worker..."
-            );
-
-            await closeHealthSnapshotWorker();
-
-            console.log(
-                "Health snapshot worker stopped"
-            );
-
-            process.exit(0);
-        };
-
-    process.on(
-        "SIGINT",
-        () => shutdown("SIGINT")
-    );
-
-    process.on(
-        "SIGTERM",
-        () => shutdown("SIGTERM")
-    );
+        process.exit(1);
+    });
 }
 
 module.exports = {

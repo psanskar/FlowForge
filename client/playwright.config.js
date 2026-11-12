@@ -4,8 +4,10 @@ import { defineConfig } from "@playwright/test";
 
 const clientDirectory = path.dirname(fileURLToPath(import.meta.url));
 const serverDirectory = path.resolve(clientDirectory, "../server");
-const apiUrl = "http://127.0.0.1:5500";
-const clientUrl = "http://127.0.0.1:5175";
+const apiPort = process.env.E2E_API_PORT ?? "5500";
+const clientPort = process.env.E2E_CLIENT_PORT ?? "5175";
+const apiUrl = `http://127.0.0.1:${apiPort}`;
+const clientUrl = `http://127.0.0.1:${clientPort}`;
 const e2eMongoUri = process.env.E2E_MONGO_URI ??
     "mongodb://127.0.0.1:27018/flowforge_browser_test";
 const e2eRedisUrl = process.env.E2E_REDIS_URL ??
@@ -53,12 +55,12 @@ export default defineConfig({
                     "flowforge-e2e-test-secret-with-more-than-32-characters",
                 GITHUB_WEBHOOK_SECRET: process.env.E2E_GITHUB_WEBHOOK_SECRET ??
                     "flowforge-e2e-webhook-secret-with-more-than-32-characters",
-                PORT: "5500",
+                PORT: apiPort,
                 CLIENT_URL: clientUrl
             }
         },
         {
-            command: "npm run dev -- --host 127.0.0.1 --port 5175 --strictPort",
+            command: `npm run dev -- --host 127.0.0.1 --port ${clientPort} --strictPort`,
             cwd: clientDirectory,
             url: clientUrl,
             reuseExistingServer: false,

@@ -120,7 +120,7 @@ const getProjectById = async (projectId, userId) => {
         "members.user": userId
     }).select(
         "_id name description owner members status startDate targetDate createdAt updatedAt"
-    );
+    ).populate("members.user", "_id name");
 
     if (!project) {
         const error = new Error("Project not found");

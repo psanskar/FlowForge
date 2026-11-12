@@ -6,6 +6,7 @@ const validEnvironment = {
     REDIS_URL: "redis://127.0.0.1:6379",
     JWT_SECRET: "a-valid-development-secret-with-32-characters",
     GITHUB_WEBHOOK_SECRET: "a-valid-webhook-secret-with-32-characters",
+    OPERATIONS_API_KEY: "a-valid-operations-key-with-32-characters",
     PORT: "5000"
 };
 
@@ -55,6 +56,30 @@ describe("validateEnvironment", () => {
             NODE_ENV: "production",
             JWT_SECRET: "replace-with-a-long-random-secret"
         })).toThrow(/Replace example secrets before starting in production/);
+    });
+
+    test("requires a strong operations key in production and rejects short keys", () => {
+        expect(() => validateEnvironment("api", {
+            ...validEnvironment,
+            NODE_ENV: "production",
+            OPERATIONS_API_KEY: undefined
+        })).toThrow(/OPERATIONS_API_KEY is required in production/);
+
+        expect(() => validateEnvironment("api", {
+            ...validEnvironment,
+            OPERATIONS_API_KEY: "too-short"
+        })).toThrow(/OPERATIONS_API_KEY must contain at least 32 characters/);
+
+        expect(() => validateEnvironment("api", {
+            ...validEnvironment,
+            NODE_ENV: "production",
+            OPERATIONS_API_KEY: "replace-with-a-random-operations-key-at-least-32-characters"
+        })).toThrow(/Replace example secrets before starting in production/);
+
+        expect(() => validateEnvironment("api", {
+            ...validEnvironment,
+            OPERATIONS_API_KEY: "                                "
+        })).toThrow(/OPERATIONS_API_KEY must contain at least 32 characters/);
     });
 
     test("accepts comma-separated browser origins and rejects URL paths", () => {

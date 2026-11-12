@@ -4,7 +4,7 @@ import {
     useNavigate
 } from "react-router-dom";
 
-import { useAuth } from "../context/AuthContext";
+import { useAuth } from "../hooks/useAuth";
 
 const AppLayout = () => {
     const navigate = useNavigate();
@@ -39,6 +39,7 @@ const AppLayout = () => {
                     <NavLink
                         to="/app"
                         end
+                        title="Overview"
                         className={({ isActive }) =>
                             `app-nav-link ${
                                 isActive
@@ -52,6 +53,7 @@ const AppLayout = () => {
 
                     <NavLink
                         to="/app/projects"
+                        title="Projects"
                         className={({ isActive }) =>
                             `app-nav-link ${
                                 isActive

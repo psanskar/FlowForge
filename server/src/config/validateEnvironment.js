@@ -43,6 +43,17 @@ const validateEnvironment = (
         );
     }
 
+    if (
+        env.OPERATIONS_API_KEY !== undefined &&
+        env.OPERATIONS_API_KEY.trim().length < 32
+    ) {
+        errors.push("OPERATIONS_API_KEY must contain at least 32 characters");
+    }
+
+    if (processType === "api" && env.NODE_ENV === "production" && !env.OPERATIONS_API_KEY?.trim()) {
+        errors.push("OPERATIONS_API_KEY is required in production");
+    }
+
     if (env.PORT !== undefined) {
         const port = Number(env.PORT);
 
@@ -111,7 +122,9 @@ const validateEnvironment = (
         env.NODE_ENV === "production" &&
         (env.JWT_SECRET === "replace-with-a-long-random-secret" ||
             env.GITHUB_WEBHOOK_SECRET ===
-                "replace-with-your-github-webhook-secret")
+                "replace-with-your-github-webhook-secret" ||
+            env.OPERATIONS_API_KEY ===
+                "replace-with-a-random-operations-key-at-least-32-characters")
     ) {
         errors.push("Replace example secrets before starting in production");
     }

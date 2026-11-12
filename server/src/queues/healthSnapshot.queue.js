@@ -58,6 +58,11 @@ const createTestQueue = () => {
     };
 
     return {
+        getJobCounts: async (...states) =>
+            Object.fromEntries(
+                states.map((state) => [state, 0])
+            ),
+
         add: async (
             name,
             data,

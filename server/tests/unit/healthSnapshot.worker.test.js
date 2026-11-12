@@ -22,6 +22,19 @@ jest.mock(
     })
 );
 
+jest.mock(
+    "../../src/queues/healthSnapshot.scheduler",
+    () => ({
+        dispatchHealthSnapshots: jest.fn()
+    })
+);
+
+const {
+    dispatchHealthSnapshots
+} = require(
+    "../../src/queues/healthSnapshot.scheduler"
+);
+
 describe("Health Snapshot Worker", () => {
     const processor =
         healthSnapshotWorker.processFn;
@@ -76,7 +89,8 @@ describe("Health Snapshot Worker", () => {
         ).toHaveBeenCalledWith({
             projectId:
                 projectId.toString(),
-            userId: ownerId
+            userId: ownerId,
+            snapshotDate: "2026-09-19"
         });
 
         expect(result).toEqual({
@@ -88,6 +102,26 @@ describe("Health Snapshot Worker", () => {
             snapshotDate:
                 "2026-09-19"
         });
+    });
+
+    it("dispatches the scheduled job to project snapshot jobs", async () => {
+        dispatchHealthSnapshots.mockResolvedValue({
+            projectsFound: 2,
+            queued: 2
+        });
+
+        await expect(
+            processor({
+                name: "dispatch-health-snapshots",
+                data: {}
+            })
+        ).resolves.toEqual({
+            projectsFound: 2,
+            queued: 2
+        });
+
+        expect(dispatchHealthSnapshots)
+            .toHaveBeenCalledTimes(1);
     });
 
     it("skips completed projects", async () => {

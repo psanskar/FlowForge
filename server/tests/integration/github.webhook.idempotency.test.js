@@ -323,7 +323,9 @@ describe(
 
                 expect(
                     retryResponse.status
-                ).toBe(202);
+                ).toBe(200);
+
+                expect(retryResponse.body.data.duplicate).toBe(true);
 
                 expect(
                     retryResponse.body.data.queued

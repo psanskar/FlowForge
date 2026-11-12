@@ -9,7 +9,8 @@ const {
     markDeliveryProcessing,
     markDeliveryProcessed,
     markDeliveryFailed,
-    claimFailedDelivery
+    claimFailedDelivery,
+    recoverProcessingDelivery
 } = require("../../src/modules/github/github.webhook.delivery.service");
 
 describe("GitHub webhook delivery service", () => {
@@ -47,10 +48,11 @@ describe("GitHub webhook delivery service", () => {
             event: "push"
         });
 
-        const result =
-            await markDeliveryProcessing(
-                "delivery-123"
-            );
+        const result = await markDeliveryProcessing(
+            "delivery-123",
+            "delivery-123-0",
+            0
+        );
 
         expect(result).toBeTruthy();
         expect(result.status).toBe(
@@ -66,14 +68,10 @@ describe("GitHub webhook delivery service", () => {
             event: "push"
         });
 
-        await markDeliveryProcessing(
-            "delivery-123"
-        );
+        await markDeliveryProcessing("delivery-123", "delivery-123-0", 0);
 
         const result =
-            await markDeliveryProcessed(
-                "delivery-123"
-            );
+            await markDeliveryProcessed("delivery-123", "delivery-123-0", 0);
 
         expect(result).toBeTruthy();
         expect(result.status).toBe(
@@ -91,14 +89,14 @@ describe("GitHub webhook delivery service", () => {
             event: "push"
         });
 
-        await markDeliveryProcessing(
-            "delivery-123"
-        );
+        await markDeliveryProcessing("delivery-123", "delivery-123-0", 0);
 
         const result =
             await markDeliveryFailed(
                 "delivery-123",
-                "Repository unavailable"
+                "Repository unavailable",
+                "delivery-123-0",
+                0
             );
 
         expect(result).toBeTruthy();
@@ -117,13 +115,13 @@ describe("GitHub webhook delivery service", () => {
             event: "push"
         });
 
-        await markDeliveryProcessing(
-            "delivery-123"
-        );
+        await markDeliveryProcessing("delivery-123", "delivery-123-0", 0);
 
         await markDeliveryFailed(
             "delivery-123",
-            "Temporary GitHub failure"
+            "Temporary GitHub failure",
+            "delivery-123-0",
+            0
         );
 
         const result =
@@ -138,6 +136,7 @@ describe("GitHub webhook delivery service", () => {
         );
         expect(result.failureReason).toBeNull();
         expect(result.processedAt).toBeNull();
+        expect(result.queueGeneration).toBe(1);
     });
 
     test("does not claim a PROCESSED delivery", async () => {
@@ -146,12 +145,12 @@ describe("GitHub webhook delivery service", () => {
             event: "push"
         });
 
-        await markDeliveryProcessing(
-            "delivery-123"
-        );
+        await markDeliveryProcessing("delivery-123", "delivery-123-0", 0);
 
         await markDeliveryProcessed(
-            "delivery-123"
+            "delivery-123",
+            "delivery-123-0",
+            0
         );
 
         const result =
@@ -161,6 +160,28 @@ describe("GitHub webhook delivery service", () => {
             });
 
         expect(result).toBeNull();
+    });
+
+    test("recovers an abandoned processing claim with a fenced next generation", async () => {
+        await recordDelivery({ deliveryId: "delivery-123", event: "push" });
+        await markDeliveryProcessing("delivery-123", "delivery-123-0", 0);
+
+        const recovered = await recoverProcessingDelivery({
+            deliveryId: "delivery-123",
+            processingJobId: "delivery-123-0",
+            queueGeneration: 0
+        });
+
+        expect(recovered.status).toBe("QUEUED");
+        expect(recovered.queueGeneration).toBe(1);
+        expect(recovered.processingJobId).toBeNull();
+
+        const staleCompletion = await markDeliveryProcessed(
+            "delivery-123",
+            "delivery-123-0",
+            0
+        );
+        expect(staleCompletion).toBeNull();
     });
 
     test("returns null when recording a duplicate delivery", async () => {

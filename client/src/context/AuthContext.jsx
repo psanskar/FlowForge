@@ -1,13 +1,11 @@
 import {
-    createContext,
-    useContext,
+    useCallback,
     useEffect,
     useState
 } from "react";
 
 import apiRequest from "../api/client";
-
-const AuthContext = createContext(null);
+import AuthContext from "./auth-context";
 
 const TOKEN_STORAGE_KEY = "flowforge_token";
 
@@ -22,11 +20,11 @@ export const AuthProvider = ({ children }) => {
         Boolean(token)
     );
 
-    const clearAuthentication = () => {
+    const clearAuthentication = useCallback(() => {
         localStorage.removeItem(TOKEN_STORAGE_KEY);
         setToken(null);
         setUser(null);
-    };
+    }, []);
 
     const login = async (credentials) => {
         const response = await apiRequest(
@@ -83,6 +81,7 @@ export const AuthProvider = ({ children }) => {
 
         const restoreAuthentication = async () => {
             if (!token) {
+                setUser(null);
                 setIsLoading(false);
                 return;
             }
@@ -114,7 +113,7 @@ export const AuthProvider = ({ children }) => {
         return () => {
             isMounted = false;
         };
-    }, []);
+    }, [token, clearAuthentication]);
 
     const value = {
         token,
@@ -131,16 +130,4 @@ export const AuthProvider = ({ children }) => {
             {children}
         </AuthContext.Provider>
     );
-};
-
-export const useAuth = () => {
-    const context = useContext(AuthContext);
-
-    if (!context) {
-        throw new Error(
-            "useAuth must be used inside AuthProvider."
-        );
-    }
-
-    return context;
 };

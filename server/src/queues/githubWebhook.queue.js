@@ -11,6 +11,7 @@ const connection = {
 const createTestQueue = () => {
     let processor = null;
     let closed = false;
+    const jobs = new Map();
 
     const processJob = async (job) => {
         if (!processor || closed) {
@@ -18,6 +19,7 @@ const createTestQueue = () => {
         }
 
         let lastError = null;
+        job.state = "active";
 
         for (
             let attempt = 0;
@@ -30,6 +32,7 @@ const createTestQueue = () => {
                 const result =
                     await processor(job);
 
+                job.state = "completed";
                 if (worker) {
                     worker.emit(
                         "completed",
@@ -46,6 +49,7 @@ const createTestQueue = () => {
                     attempt + 1 >=
                     job.opts.attempts
                 ) {
+                    job.state = "failed";
                     if (worker) {
                         worker.emit(
                             "failed",
@@ -59,17 +63,29 @@ const createTestQueue = () => {
             }
         }
 
+        job.state = "failed";
         return lastError;
     };
 
     let worker = null;
 
     return {
+        getJob: async (jobId) => jobs.get(jobId) || null,
+
+        getJobCounts: async (...states) =>
+            Object.fromEntries(
+                states.map((state) => [state, 0])
+            ),
+
         add: async (
             name,
             data,
             options = {}
         ) => {
+            if (options.jobId && jobs.has(options.jobId)) {
+                return jobs.get(options.jobId);
+            }
+
             const job = {
                 id:
                     options.jobId ||
@@ -85,8 +101,14 @@ const createTestQueue = () => {
                         5
                 },
 
-                attemptsMade: 0
+                state: "waiting",
+                attemptsMade: 0,
+                getState: async () => job.state
             };
+
+            if (job.id) {
+                jobs.set(job.id, job);
+            }
 
             setImmediate(() => {
                 processJob(job).catch(
@@ -120,6 +142,7 @@ const createTestQueue = () => {
             closed = true;
             processor = null;
             worker = null;
+            jobs.clear();
         }
     };
 };
@@ -160,6 +183,7 @@ const enqueueGithubWebhook =
         deliveryId,
         event,
         payload,
+        queueGeneration = 0,
         jobId = deliveryId
     }) => {
         return githubWebhookQueue.add(
@@ -167,7 +191,8 @@ const enqueueGithubWebhook =
             {
                 deliveryId,
                 event,
-                payload
+                payload,
+                queueGeneration
             },
             {
                 jobId

@@ -32,6 +32,7 @@ const ProjectRiskHistory =
 
 const {
     buildSnapshotData,
+    formatSnapshotDate,
     captureProjectHealthSnapshot
 } = require(
     "../../src/modules/projects/project.health.snapshot.service"
@@ -69,6 +70,14 @@ describe(
                 ],
                 status: "active"
             });
+        });
+
+        test("formats the business date consistently across the UTC midnight boundary", () => {
+            expect(
+                formatSnapshotDate(
+                    new Date("2026-09-18T18:30:00.000Z")
+                )
+            ).toBe("2026-09-19");
         });
 
         it(
@@ -402,6 +411,40 @@ describe(
                     storedSnapshot.project.toString()
                 ).toBe(
                     project._id.toString()
+                );
+            }
+        );
+
+        test(
+            "uses the scheduled business date for the snapshot and risk history when processing near UTC midnight",
+            async () => {
+                const capturedAt = new Date("2026-09-18T18:30:00.000Z");
+
+                await Task.create({
+                    project: project._id,
+                    title: "Overdue at snapshot time",
+                    status: "todo",
+                    dueDate: new Date("2026-09-18T17:30:00.000Z"),
+                    lastActivityAt: capturedAt,
+                    createdBy: user._id
+                });
+
+                const snapshot = await captureProjectHealthSnapshot({
+                    projectId: project._id.toString(),
+                    userId: user._id.toString(),
+                    now: capturedAt,
+                    snapshotDate: "2026-09-19"
+                });
+
+                expect(snapshot.snapshotDate).toBe("2026-09-19");
+
+                const riskHistory = await ProjectRiskHistory.findOne({
+                    project: project._id,
+                    type: "TASK_OVERDUE"
+                }).lean();
+
+                expect(riskHistory.snapshotKey).toBe(
+                    `${project._id.toString()}:2026-09-19`
                 );
             }
         );

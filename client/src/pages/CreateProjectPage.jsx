@@ -45,8 +45,8 @@ const CreateProjectPage = () => {
     };
 
     return (
-        <main className="page-container">
-            <div className="page-header">
+        <main className="page-container task-form-page">
+            <div className="page-header task-form-heading">
                 <div>
                     <p>Projects</p>
                     <h1>Create project</h1>

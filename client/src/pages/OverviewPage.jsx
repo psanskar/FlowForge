@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 const OverviewPage = () => {
     return (
         <section className="page-section">
@@ -19,7 +21,7 @@ const OverviewPage = () => {
                 </div>
             </div>
 
-            <div className="empty-state">
+            <div className="empty-state overview-empty-state">
                 <h2>
                     No project selected
                 </h2>
@@ -28,6 +30,9 @@ const OverviewPage = () => {
                     Select a project to view its
                     execution health and risks.
                 </p>
+                <Link className="primary-button" to="/app/projects">
+                    Explore workspace
+                </Link>
             </div>
         </section>
     );

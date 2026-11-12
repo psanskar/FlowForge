@@ -13,6 +13,7 @@ logs/
 
 # Test coverage
 coverage/
+/backups/
 
 # OS files
 .DS_Store

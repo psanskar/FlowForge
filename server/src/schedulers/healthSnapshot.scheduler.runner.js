@@ -5,10 +5,22 @@ const {
     startHealthSnapshotScheduler,
     closeHealthSnapshotScheduler
 } = require("../queues/healthSnapshot.scheduler");
+const {
+    healthSnapshotQueue
+} = require("../queues/healthSnapshot.queue");
+const {
+    startWorkerHeartbeat
+} = require("../operations/workerHeartbeat");
+
+let stopWorkerHeartbeat = async () => {};
 
 const start = async () => {
     validateEnvironment("scheduler");
     await startHealthSnapshotScheduler();
+    stopWorkerHeartbeat = await startWorkerHeartbeat(
+        healthSnapshotQueue,
+        "health-scheduler"
+    );
 
     console.log(
         "FlowForge health snapshot scheduler process running"
@@ -20,6 +32,7 @@ const shutdown = async (signal) => {
         `Received ${signal}. Shutting down health snapshot scheduler...`
     );
 
+    await stopWorkerHeartbeat();
     await closeHealthSnapshotScheduler();
 
     console.log(

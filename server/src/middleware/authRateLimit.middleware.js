@@ -78,5 +78,6 @@ module.exports = {
     registrationRateLimit,
     closeAuthRateLimitStore,
     connectAuthRateLimitStore,
+    getRedisClient,
     createAuthRateLimiter
 };

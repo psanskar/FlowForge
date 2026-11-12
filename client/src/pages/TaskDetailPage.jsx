@@ -178,7 +178,7 @@ const TaskDetailPage = () => {
 
     if (isLoading) {
         return (
-            <main className="page-container">
+            <main className="page-container task-detail-page">
                 <p>Loading task...</p>
             </main>
         );
@@ -186,7 +186,7 @@ const TaskDetailPage = () => {
 
     if (isError || !task) {
         return (
-            <main className="page-container">
+            <main className="page-container task-detail-page">
                 <h1>Task</h1>
 
                 <p>
@@ -202,8 +202,8 @@ const TaskDetailPage = () => {
     }
 
     return (
-        <main className="page-container">
-            <div className="page-header">
+        <main className="page-container task-detail-page">
+            <div className="page-header task-detail-heading">
                 <div>
                     <p>Task</p>
 
@@ -217,8 +217,8 @@ const TaskDetailPage = () => {
                 </Link>
             </div>
 
-            <div className="dashboard-card">
-                <div className="page-header">
+            <div className="dashboard-card task-detail-card">
+                <div className="page-header task-detail-actions">
                     <h2>Execution details</h2>
 
                     <div>
@@ -252,7 +252,7 @@ const TaskDetailPage = () => {
                     )}
                 </div>
 
-                <div>
+                <div className="task-detail-meta-grid">
                     <p>
                         <strong>Status:</strong>{" "}
                         {formatStatus(task.status)}
@@ -290,14 +290,14 @@ const TaskDetailPage = () => {
             </div>
 
             {task.description && (
-                <div className="dashboard-card">
+                <div className="dashboard-card task-detail-card task-description-card">
                     <h2>Description</h2>
 
                     <p>{task.description}</p>
                 </div>
             )}
 
-            <div className="dashboard-card">
+            <div className="dashboard-card task-detail-card task-dependencies-card">
                 <h2>Dependencies</h2>
 
                 {isDependenciesLoading && (
@@ -475,7 +475,7 @@ const TaskDetailPage = () => {
                     )}
             </div>
 
-            <div className="dashboard-card">
+            <div className="dashboard-card task-detail-card task-activity-card">
                 <h2>Activity</h2>
 
                 <p>
