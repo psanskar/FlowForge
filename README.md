@@ -23,27 +23,65 @@ The API, client, GitHub webhook worker, health snapshot worker, and health snaps
 
 The API validates MongoDB, Redis, JWT, webhook-secret, and port settings before listening. Worker and scheduler entrypoints validate their required service URLs before starting. `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET` must each contain at least 32 characters. The webhook secret must match the value configured in GitHub repository webhook settings.
 
-## Local setup with Docker Compose
+## Local development with Docker (recommended)
 
-1. Copy `server/.env.example` to `server/.env` and replace both placeholder secrets with unique random values of at least 32 characters. The API requires a webhook secret because the signed webhook endpoint is enabled.
-   Copy the root `.env.example` to `.env` if you need to change the Compose MongoDB database name.
-2. Start the stack from the repository root:
+You need Docker Desktop with its engine running. From PowerShell in the project folder, run:
 
-   ```sh
-   docker compose up --build
-   ```
+```powershell
+.\dev.ps1
+```
 
-3. Open [http://localhost:8080](http://localhost:8080). The API health endpoint is [http://localhost:5000/api/v1/health](http://localhost:5000/api/v1/health).
+The script creates `server/.env` if it is missing and generates local secrets. It preserves existing secrets and only replaces obvious example placeholders. Then it builds and starts the client, API, MongoDB, Redis, GitHub worker, health worker, and health scheduler, waiting for the API health check.
 
-Stop the stack with `docker compose down`. MongoDB and Redis data persist in named volumes. To discard that data, use `docker compose down --volumes`; this permanently deletes the local databases.
+Open [http://localhost:8080](http://localhost:8080). The API health endpoint is [http://localhost:5000/api/v1/health](http://localhost:5000/api/v1/health). Register or log in through the app.
 
-This Compose file is for local development and demos. It does not configure production TLS, external access controls, backups, or managed secret storage. Do not expose its default MongoDB or Redis services publicly.
+### Database and stopping
+
+The Compose MongoDB is the app database for this setup. Its data persists in the `mongo_data` Docker volume. To inspect it with Mongo Shell:
+
+```powershell
+docker compose exec mongo mongosh flowforge
+```
+
+Then, for example, run `show collections` or `db.users.countDocuments()`. The server run directly on Windows using `server/.env` may point to a separately installed MongoDB; use the Docker setup above when you want the app and Compose database together.
+
+Stop the stack while keeping its data:
+
+```powershell
+.\dev.ps1 -Down
+```
+
+Do not use `docker compose down --volumes` unless you intend to permanently delete the local MongoDB and Redis data.
+
+To follow service logs, run `.\dev.ps1 -Logs` or `docker compose logs --follow`.
+
+### GitHub webhooks during local development
+
+The regular GitHub integration does not need a tunnel for outbound requests. GitHub needs a public URL only to deliver webhooks to your local API. If you want to test webhook deliveries, install and run Cloudflare Tunnel:
+
+```powershell
+cloudflared tunnel --url http://localhost:5000
+```
+
+Use the HTTPS URL it prints, followed by `/api/v1/github/webhook`, as the webhook payload URL in GitHub. Set the webhook secret to the same value as `GITHUB_WEBHOOK_SECRET` in `server/.env`. A temporary tunnel URL changes when restarted; the webhook will need its URL updated. A tunnel is unnecessary for normal local use.
+
+### Manual Docker Compose alternative
+
+If you prefer not to use the PowerShell helper, copy `server/.env.example` to `server/.env`, set `JWT_SECRET` and `GITHUB_WEBHOOK_SECRET` to unique random values of at least 32 characters, then run:
+
+```sh
+docker compose up --build --detach --wait
+```
+
+Stop with `docker compose down`; the named data volumes remain. This Compose setup is for local development and demos. It does not configure production TLS, external access controls, backups, or managed secret storage. Do not expose its MongoDB or Redis services publicly.
 
 ## Production deployment status
 
 The production Compose template, deployment/rollback guide, and guarded MongoDB backup/restore scripts are documented in [the deployment runbook](docs/deployment-runbook.md). The template has not been deployed to a public host; it requires a configured domain and managed MongoDB/Redis services.
 
-## Local setup without Docker
+## Advanced setup without Docker
+
+This mode uses a separately installed MongoDB and Redis. Its data is separate from the Docker Compose app database; choose one mode consistently if you want the same accounts and projects.
 
 1. Start MongoDB and Redis locally. The default connection strings are `mongodb://127.0.0.1:27017/flowforge` and `redis://127.0.0.1:6379`.
 2. Copy `server/.env.example` to `server/.env` and `client/.env.example` to `client/.env`. In the server file, set `JWT_SECRET` to a long random value and set `CLIENT_URL` to the exact browser origin used by Vite. Multiple comma-separated origins are supported, for example `http://localhost:5173,http://localhost:5174`.
