@@ -6,13 +6,8 @@ const projectMemberSchema = new mongoose.Schema(
             type: mongoose.Schema.Types.ObjectId,
             ref: "User",
             required: true
-        },
-
-        role: {
-            type: String,
-            enum: ["owner", "member"],
-            required: true
         }
+
     },
     {
         _id: false
@@ -39,6 +34,12 @@ const projectSchema = new mongoose.Schema(
             required: true
         },
 
+        mutationRevision: {
+            type: Number,
+            default: 0,
+            select: false
+        },
+
         members: {
             type: [projectMemberSchema],
             default: []
@@ -53,6 +54,13 @@ const projectSchema = new mongoose.Schema(
                 "archived"
             ],
             default: "planning"
+        },
+
+        statusBeforeArchive: {
+            type: String,
+            enum: ["planning", "active", "completed"],
+            default: null,
+            select: false
         },
 
         startDate: {

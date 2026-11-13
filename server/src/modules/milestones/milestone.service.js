@@ -1,7 +1,11 @@
 const mongoose = require("mongoose");
 
 const Milestone = require("./milestone.model");
-const Project = require("../projects/project.model");
+const {
+    getProjectForMember,
+    assertProjectOwner,
+    assertProjectWritable
+} = require("../projects/project.access");
 
 const createMilestone = async ({
     projectId,
@@ -10,22 +14,15 @@ const createMilestone = async ({
     dueDate,
     userId
 }) => {
-    const project = await Project.findOne({
-        _id: projectId,
-        "members": {
-            $elemMatch: {
-                user: userId,
-                role: "owner"
-            }
-        }
-    }).select("startDate targetDate");
-
-    if (!project) {
-        const error = new Error("Project not found");
-        error.statusCode = 404;
-        error.code = "PROJECT_NOT_FOUND";
-        throw error;
-    }
+    const project = await getProjectForMember(
+        projectId,
+        userId,
+        { select: "owner startDate targetDate status" }
+    );
+    assertProjectOwner(project, userId, {
+        message: "Only the project owner can create milestones"
+    });
+    assertProjectWritable(project);
 
     const milestoneDueDate = new Date(dueDate);
 
@@ -72,17 +69,7 @@ const listMilestones = async (
         status
     } = {}
 ) => {
-    const project = await Project.findOne({
-        _id: projectId,
-        "members.user": userId
-    }).select("_id");
-
-    if (!project) {
-        const error = new Error("Project not found");
-        error.statusCode = 404;
-        error.code = "PROJECT_NOT_FOUND";
-        throw error;
-    }
+    await getProjectForMember(projectId, userId, { select: "_id" });
 
     const filter = {
         project: projectId
@@ -135,17 +122,11 @@ const getMilestone = async (milestoneId, userId) => {
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: milestone.project,
-        "members.user": userId
-    }).select("_id");
-
-    if (!project) {
-        const error = new Error("Milestone not found");
-        error.statusCode = 404;
-        error.code = "MILESTONE_NOT_FOUND";
-        throw error;
-    }
+    await getProjectForMember(milestone.project, userId, {
+        select: "_id",
+        notFoundCode: "MILESTONE_NOT_FOUND",
+        notFoundMessage: "Milestone not found"
+    });
 
     return milestone;
 };
@@ -174,26 +155,19 @@ const updateMilestone = async ({
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: milestone.project,
-        "members.user": userId
-    }).select("owner startDate targetDate");
-
-    if (!project) {
-        const error = new Error("Milestone not found");
-        error.statusCode = 404;
-        error.code = "MILESTONE_NOT_FOUND";
-        throw error;
-    }
-
-    if (project.owner.toString() !== userId.toString()) {
-        const error = new Error(
-            "Only the project owner can update milestones"
-        );
-        error.statusCode = 403;
-        error.code = "PROJECT_OWNER_REQUIRED";
-        throw error;
-    }
+    const project = await getProjectForMember(
+        milestone.project,
+        userId,
+        {
+            select: "owner startDate targetDate status",
+            notFoundCode: "MILESTONE_NOT_FOUND",
+            notFoundMessage: "Milestone not found"
+        }
+    );
+    assertProjectOwner(project, userId, {
+        message: "Only the project owner can update milestones"
+    });
+    assertProjectWritable(project);
 
     if (name !== undefined) {
         milestone.name = name.trim();
@@ -259,26 +233,19 @@ const deleteMilestone = async (milestoneId, userId) => {
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: milestone.project,
-        "members.user": userId
-    }).select("owner");
-
-    if (!project) {
-        const error = new Error("Milestone not found");
-        error.statusCode = 404;
-        error.code = "MILESTONE_NOT_FOUND";
-        throw error;
-    }
-
-    if (project.owner.toString() !== userId.toString()) {
-        const error = new Error(
-            "Only the project owner can delete milestones"
-        );
-        error.statusCode = 403;
-        error.code = "PROJECT_OWNER_REQUIRED";
-        throw error;
-    }
+    const project = await getProjectForMember(
+        milestone.project,
+        userId,
+        {
+            select: "owner status",
+            notFoundCode: "MILESTONE_NOT_FOUND",
+            notFoundMessage: "Milestone not found"
+        }
+    );
+    assertProjectOwner(project, userId, {
+        message: "Only the project owner can delete milestones"
+    });
+    assertProjectWritable(project);
 
     const Task = require("../tasks/task.model");
 

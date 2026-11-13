@@ -87,7 +87,9 @@ const processGithubWebhookJob =
             return {
                 deliveryId,
                 signalCount:
-                    result.signals.length
+                    result.signals.length,
+                skipped: Boolean(result.skipped),
+                reason: result.reason
             };
         } catch (error) {
             const isFinalAttempt =

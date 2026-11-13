@@ -13,9 +13,14 @@ const useCreateMilestone = (projectId) => {
             { method: "POST", body: payload, token }
         ),
         onSuccess: () => {
-            queryClient.invalidateQueries({
-                queryKey: ["project-dashboard", projectId]
-            });
+            return Promise.all([
+                queryClient.invalidateQueries({
+                    queryKey: ["project-dashboard", projectId]
+                }),
+                queryClient.invalidateQueries({
+                    queryKey: ["project-milestones", projectId]
+                })
+            ]);
         }
     });
 };

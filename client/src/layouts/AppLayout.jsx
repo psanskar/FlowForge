@@ -5,6 +5,7 @@ import {
 } from "react-router-dom";
 
 import { useAuth } from "../hooks/useAuth";
+import ThemeToggle from "../components/ThemeToggle";
 
 const AppLayout = () => {
     const navigate = useNavigate();
@@ -76,6 +77,7 @@ const AppLayout = () => {
                     </div>
 
                     <div className="app-user-area">
+                        <ThemeToggle className="app-theme-toggle" />
                         <div className="app-user-info">
                             <span className="app-user-name">
                                 {user?.name}

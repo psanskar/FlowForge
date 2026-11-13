@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const Project =
     require("./project.model");
+const { buildProjectAccessFilter } = require("./project.access");
 
 const ProjectHealthSnapshot =
     require("./project.health.snapshot.model");
@@ -101,16 +102,9 @@ const getHealthTrend = async ({
     }
 
     const project =
-        await Project.findOne({
-            _id: projectId,
-            $or: [
-                { owner: userId },
-                {
-                    "members.user":
-                        userId
-                }
-            ]
-        })
+        await Project.findOne(
+            buildProjectAccessFilter(projectId, userId)
+        )
             .select("_id")
             .lean();
 

@@ -27,6 +27,10 @@ const GithubWebhookDelivery =
         "../../src/modules/github/github.webhook.delivery.model"
     );
 
+const Project = require(
+    "../../src/modules/projects/project.model"
+);
+
 const {
     githubWebhookWorker
 } = require(
@@ -62,9 +66,16 @@ describe(
             await GithubSignal.deleteMany({});
             await GithubRepository.deleteMany({});
             await GithubWebhookDelivery.deleteMany({});
+            await Project.deleteMany({});
 
-            projectId =
-                new mongoose.Types.ObjectId();
+            const ownerId = new mongoose.Types.ObjectId();
+            const project = await Project.create({
+                name: "Webhook idempotency project",
+                owner: ownerId,
+                members: [{ user: ownerId }],
+                status: "active"
+            });
+            projectId = project._id;
         });
 
         afterAll(async () => {

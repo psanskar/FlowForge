@@ -7,6 +7,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "smoke": "node scripts/smoke-check.js",
+    "migrate:project-ownership": "node scripts/migrate-project-ownership.js",
     "worker:github": "node src/workers/githubWebhook.worker.js",
     "worker:health": "node src/workers/healthSnapshot.worker.js",
     "scheduler:health": "node src/schedulers/healthSnapshot.scheduler.runner.js",

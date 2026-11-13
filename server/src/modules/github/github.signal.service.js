@@ -3,6 +3,10 @@ const mongoose = require("mongoose");
 const Project = require(
     "../projects/project.model"
 );
+const {
+    buildProjectAccessFilter,
+    assertProjectWritable
+} = require("../projects/project.access");
 
 const GithubRepository = require(
     "./github.model"
@@ -122,11 +126,10 @@ const createSignal = async (
     validateProjectId(projectId);
 
     const project =
-        await Project.findOne({
-            _id: projectId,
-            "members.user": userId
-        })
-            .select("_id")
+        await Project.findOne(
+            buildProjectAccessFilter(projectId, userId)
+        )
+            .select("_id status")
             .lean();
 
     if (!project) {
@@ -136,6 +139,8 @@ const createSignal = async (
             "Project not found"
         );
     }
+
+    assertProjectWritable(project);
 
     return persistSignal(
         projectId,

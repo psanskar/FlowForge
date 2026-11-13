@@ -59,7 +59,7 @@ describe("Project API", () => {
 
         expect(project.members).toHaveLength(1);
         expect(project.members[0].user).toBe(userId);
-        expect(project.members[0].role).toBe("owner");
+        expect(project.members[0]).not.toHaveProperty("role");
 
         const databaseProject = await Project.findById(project._id);
 
@@ -208,6 +208,106 @@ describe("Project API", () => {
             page: "Page must be an integer greater than or equal to 1",
             limit: "Limit must be an integer between 1 and 100"
         });
+    });
+
+    test("archives a project for its owner and restores its previous status", async () => {
+        const createResponse = await request(app)
+            .post("/api/v1/projects")
+            .set("Authorization", `Bearer ${token}`)
+            .send({ name: "Archive lifecycle project" });
+
+        const projectId = createResponse.body.data.project._id;
+        await Project.updateOne({ _id: projectId }, { $set: { status: "active" } });
+
+        const archiveResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/archive`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(archiveResponse.status).toBe(200);
+        expect(archiveResponse.body.data.project.status).toBe("archived");
+
+        const archivedInDatabase = await Project.findById(projectId);
+        expect(archivedInDatabase.status).toBe("archived");
+
+        const restoreResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/restore`)
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(restoreResponse.status).toBe(200);
+        expect(restoreResponse.body.data.project.status).toBe("active");
+
+        const restoredInDatabase = await Project.findById(projectId);
+        expect(restoredInDatabase.status).toBe("active");
+        expect(restoredInDatabase.statusBeforeArchive ?? null).toBeNull();
+    });
+
+    test("archived projects stay readable, retain tasks, and reject task writes", async () => {
+        const createResponse = await request(app)
+            .post("/api/v1/projects")
+            .set("Authorization", `Bearer ${token}`)
+            .send({ name: "Read-only archived project" });
+
+        const projectId = createResponse.body.data.project._id;
+        const taskResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/tasks`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({ title: "Task retained after archive" });
+
+        expect(taskResponse.status).toBe(201);
+
+        const archiveResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/archive`)
+            .set("Authorization", `Bearer ${token}`);
+        expect(archiveResponse.status).toBe(200);
+
+        const detailResponse = await request(app)
+            .get(`/api/v1/projects/${projectId}`)
+            .set("Authorization", `Bearer ${token}`);
+        expect(detailResponse.status).toBe(200);
+        expect(detailResponse.body.data.project.status).toBe("archived");
+
+        const listResponse = await request(app)
+            .get(`/api/v1/projects/${projectId}/tasks`)
+            .set("Authorization", `Bearer ${token}`);
+        expect(listResponse.status).toBe(200);
+        expect(listResponse.body.data.tasks).toHaveLength(1);
+
+        const writeResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/tasks`)
+            .set("Authorization", `Bearer ${token}`)
+            .send({ title: "Should be rejected" });
+        expect(writeResponse.status).toBe(409);
+        expect(writeResponse.body.error.code).toBe("PROJECT_ARCHIVED");
+    });
+
+    test("only the owner can archive or restore a project", async () => {
+        const createResponse = await request(app)
+            .post("/api/v1/projects")
+            .set("Authorization", `Bearer ${token}`)
+            .send({ name: "Owner-only archive project" });
+
+        const outsiderResponse = await request(app)
+            .post("/api/v1/auth/register")
+            .send({
+                name: "Archive Outsider",
+                email: "archive-outsider@flowforge.local",
+                password: "TestPassword123"
+            });
+        const outsiderToken = outsiderResponse.body.data.token;
+        const projectId = createResponse.body.data.project._id;
+
+        const archiveResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/archive`)
+            .set("Authorization", `Bearer ${outsiderToken}`);
+        expect(archiveResponse.status).toBe(404);
+
+        const restoreResponse = await request(app)
+            .post(`/api/v1/projects/${projectId}/restore`)
+            .set("Authorization", `Bearer ${outsiderToken}`);
+        expect(restoreResponse.status).toBe(404);
+
+        const projectInDatabase = await Project.findById(projectId);
+        expect(projectInDatabase.status).toBe("planning");
     });
 
 });

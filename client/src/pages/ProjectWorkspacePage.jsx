@@ -1,9 +1,19 @@
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import useProject from "../hooks/useProject";
+import { useAuth } from "../hooks/useAuth";
+import useProjectArchive from "../hooks/useProjectArchive";
 import useProjectDashboard from "../hooks/useProjectDashboard";
+import useProjectMilestones from "../hooks/useProjectMilestones";
 import useHealthTrend from "../hooks/useHealthTrend";
 import useProjectRealtime from "../hooks/useProjectRealtime";
+import ProjectMembersMenu from "../components/ProjectMembersMenu";
+import {
+    useConnectGithubRepository,
+    useGithubMetrics,
+    useGithubRepository
+} from "../hooks/useGithubIntegration";
 
 const formatRiskType = (type) => {
     return type
@@ -129,13 +139,31 @@ const getHealthStatusClass = (status) => {
 
     return status
         .toLowerCase()
-        .replaceAll("_", "-");
+        .replace(/[\s_]+/g, "-");
+};
+
+const groupRiskSignals = (risks = []) => {
+    const groups = new Map();
+
+    risks.forEach((risk) => {
+        const key = risk.type || risk.id;
+        const group = groups.get(key) || [];
+        group.push(risk);
+        groups.set(key, group);
+    });
+
+    return Array.from(groups, ([type, signalsForType]) => ({
+        type,
+        risks: signalsForType
+    }));
 };
 
 const HealthTrendSection = ({
     snapshots = [],
     signals = [],
-    projectId
+    projectId,
+    isLoading = false,
+    error
 }) => {
     const sortedSnapshots = [
         ...snapshots
@@ -156,22 +184,41 @@ const HealthTrendSection = ({
 
     if (!latestSnapshot) {
         return (
-            <div className="dashboard-section">
+            <div className="dashboard-section workspace-trend-section">
                 <div className="dashboard-section-header">
                     <h2>
                         Health trend
                     </h2>
 
                     <p>
-                        Historical project health
-                        snapshots captured over time.
+                        Health scores from scheduled snapshots.
                     </p>
                 </div>
 
-                <div className="dashboard-trend-empty">
-                    No health snapshots are available
-                    yet.
-                </div>
+                {error ? (
+                    <div className="dashboard-trend-empty workspace-trend-empty workspace-trend-empty-error" role="alert">
+                        Unable to load health history: {error.message || "Something went wrong."}
+                    </div>
+                ) : isLoading ? (
+                    <div className="dashboard-trend-empty workspace-trend-empty">
+                        Loading health history…
+                    </div>
+                ) : (
+                    <div className="dashboard-trend-empty workspace-trend-empty">
+                        <svg viewBox="0 0 48 48" aria-hidden="true">
+                            <path d="M7 37h34M10 31l9-9 7 5 12-15" />
+                            <circle cx="10" cy="31" r="2" />
+                            <circle cx="19" cy="22" r="2" />
+                            <circle cx="26" cy="27" r="2" />
+                            <circle cx="38" cy="12" r="2" />
+                        </svg>
+                        <div>
+                            <strong>Health history starts with the first snapshot</strong>
+                            <p>Live health is shown above. The trend appears after at least two scheduled snapshots.</p>
+                        </div>
+                        <span>Awaiting history</span>
+                    </div>
+                )}
             </div>
         );
     }
@@ -180,94 +227,15 @@ const HealthTrendSection = ({
         sortedSnapshots.length >= 2;
 
     return (
-        <div className="dashboard-section">
+        <div className="dashboard-section workspace-trend-section">
             <div className="dashboard-section-header">
                 <h2>
                     Health trend
                 </h2>
 
                 <p>
-                    Historical risk-adjusted project
-                    health captured by the snapshot
-                    pipeline.
+                    Risk-adjusted health across scheduled snapshots.
                 </p>
-            </div>
-
-            <div className="dashboard-trend-summary">
-                <div className="dashboard-trend-latest">
-                    <span className="dashboard-card-label">
-                        Latest snapshot
-                    </span>
-
-                    <div className="dashboard-trend-score-row">
-                        <strong>
-                            {latestSnapshot.healthScore}
-                        </strong>
-
-                        <span
-                            className={`dashboard-trend-status ${getHealthStatusClass(
-                                latestSnapshot.healthStatus
-                            )}`}
-                        >
-                            {latestSnapshot.healthStatus}
-                        </span>
-                    </div>
-
-                    <p>
-                        Captured on{" "}
-                        {formatSnapshotDate(
-                            latestSnapshot.snapshotDate
-                        )}
-                    </p>
-                </div>
-
-                <div className="dashboard-trend-stat">
-                    <span className="dashboard-card-label">
-                        High risks
-                    </span>
-
-                    <strong>
-                        {
-                            latestSnapshot
-                                .riskCounts
-                                ?.high ?? 0
-                        }
-                    </strong>
-                </div>
-
-                <div className="dashboard-trend-stat">
-                    <span className="dashboard-card-label">
-                        Medium risks
-                    </span>
-
-                    <strong>
-                        {
-                            latestSnapshot
-                                .riskCounts
-                                ?.medium ?? 0
-                        }
-                    </strong>
-                </div>
-
-                <div className="dashboard-trend-stat">
-                    <span className="dashboard-card-label">
-                        Completed tasks
-                    </span>
-
-                    <strong>
-                        {
-                            latestSnapshot
-                                .taskSummary
-                                ?.completedTasks ?? 0
-                        }
-                        /
-                        {
-                            latestSnapshot
-                                .taskSummary
-                                ?.totalTasks ?? 0
-                        }
-                    </strong>
-                </div>
             </div>
 
             {hasHistoricalTrend ? (
@@ -283,50 +251,46 @@ const HealthTrendSection = ({
                         </span>
                     </div>
 
-                    <div className="dashboard-trend-points">
-                        {sortedSnapshots.map(
-                            (snapshot) => {
-                                const score =
-                                    Math.max(
-                                        0,
-                                        Math.min(
-                                            100,
-                                            Number(
-                                                snapshot.healthScore
-                                            ) || 0
-                                        )
-                                    );
-
+                    <div className="dashboard-trend-line-wrap">
+                        <div className="dashboard-trend-axis-labels" aria-hidden="true">
+                            <span>100</span><span>75</span><span>50</span><span>25</span><span>0</span>
+                        </div>
+                        <svg
+                            className="dashboard-trend-line"
+                            viewBox="0 0 1000 200"
+                            preserveAspectRatio="none"
+                            role="img"
+                            aria-label={`Project health trend across ${sortedSnapshots.length} snapshots`}
+                        >
+                            {[0, 25, 50, 75, 100].map((value) => {
+                                const y = 190 - value * 1.6;
+                                return <line key={value} x1="28" x2="972" y1={y} y2={y} className="dashboard-trend-gridline" />;
+                            })}
+                            <polyline
+                                className="dashboard-trend-polyline"
+                                points={sortedSnapshots.map((snapshot, index) => {
+                                    const score = Math.max(0, Math.min(100, Number(snapshot.healthScore) || 0));
+                                    const x = 28 + (index * 944) / Math.max(1, sortedSnapshots.length - 1);
+                                    const y = 190 - score * 1.6;
+                                    return `${x},${y}`;
+                                }).join(" ")}
+                            />
+                            {sortedSnapshots.map((snapshot, index) => {
+                                const score = Math.max(0, Math.min(100, Number(snapshot.healthScore) || 0));
+                                const x = 28 + (index * 944) / Math.max(1, sortedSnapshots.length - 1);
+                                const y = 190 - score * 1.6;
                                 return (
-                                    <div
-                                        key={
-                                            snapshot._id ||
-                                            snapshot.snapshotDate
-                                        }
-                                        className="dashboard-trend-point"
-                                    >
-                                        <div className="dashboard-trend-point-value">
-                                            {score}
-                                        </div>
-
-                                        <div className="dashboard-trend-point-track">
-                                            <div
-                                                className="dashboard-trend-point-fill"
-                                                style={{
-                                                    height: `${score}%`
-                                                }}
-                                            />
-                                        </div>
-
-                                        <span>
-                                            {formatSnapshotDate(
-                                                snapshot.snapshotDate
-                                            )}
-                                        </span>
-                                    </div>
+                                    <circle key={snapshot._id || snapshot.snapshotDate} cx={x} cy={y} r="5" className="dashboard-trend-dot">
+                                        <title>{`${formatSnapshotDate(snapshot.snapshotDate)}: ${score}`}</title>
+                                    </circle>
                                 );
-                            }
-                        )}
+                            })}
+                        </svg>
+                    </div>
+                    <div className="dashboard-trend-date-labels">
+                        {sortedSnapshots.map((snapshot) => (
+                            <span key={snapshot._id || snapshot.snapshotDate}>{formatSnapshotDate(snapshot.snapshotDate)}</span>
+                        ))}
                     </div>
                 </div>
             ) : (
@@ -381,13 +345,186 @@ const HealthTrendSection = ({
                     </div>
                 </div>
             )}
+
         </div>
+    );
+};
+
+const formatGithubCycleTime = (hours) => {
+    if (hours === null || hours === undefined) {
+        return "—";
+    }
+
+    return hours >= 24
+        ? `${(hours / 24).toFixed(1)}d`
+        : `${hours.toFixed(1)}h`;
+};
+
+const GithubIntegrationSection = ({ projectId, readOnly = false }) => {
+    const [owner, setOwner] = useState("");
+    const [repo, setRepo] = useState("");
+    const repositoryQuery = useGithubRepository(projectId);
+    const repository = repositoryQuery.data;
+    const metricsQuery = useGithubMetrics(
+        projectId,
+        Boolean(repository)
+    );
+    const connectRepository = useConnectGithubRepository(projectId);
+
+    const handleConnect = (event) => {
+        event.preventDefault();
+        connectRepository.mutate({
+            owner: owner.trim(),
+            repo: repo.trim()
+        });
+    };
+
+    const metrics = metricsQuery.data;
+    const recordedActivity = metrics
+        ? (metrics.pullRequests?.open ?? 0) +
+          (metrics.pullRequests?.opened ?? 0) +
+          (metrics.pullRequests?.merged ?? 0) +
+          (metrics.issues?.opened ?? 0) +
+          (metrics.issues?.closed ?? 0) +
+          (metrics.commits?.count ?? 0)
+        : 0;
+
+    return (
+        <section
+            className="dashboard-section workspace-github-section"
+            id="github-integration"
+        >
+            <div className="dashboard-section-header workspace-github-header">
+                <div>
+                    <h2>GitHub integration</h2>
+                    <p>Repository activity and pull request flow</p>
+                </div>
+                {repository && (
+                    <span className="workspace-project-status">Connected</span>
+                )}
+            </div>
+
+            {repositoryQuery.isLoading ? (
+                <div className="workspace-github-empty">Checking repository connection…</div>
+            ) : repositoryQuery.isError ? (
+                <div className="workspace-github-empty workspace-github-error">
+                    Unable to load the GitHub connection: {repositoryQuery.error?.message || "Please try again."}
+                </div>
+            ) : repository ? (
+                <>
+                    <div className="workspace-github-repository">
+                        <div>
+                            <a
+                                href={`https://github.com/${repository.fullName}`}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
+                                {repository.fullName}
+                            </a>
+                            <span>Default branch: {repository.defaultBranch}</span>
+                        </div>
+                        <span className="workspace-github-visibility">
+                            {repository.private ? "Private" : "Public"}
+                        </span>
+                    </div>
+
+                    {metricsQuery.isLoading ? (
+                        <div className="workspace-github-empty">Loading the last 30 days…</div>
+                    ) : metricsQuery.isError ? (
+                        <div className="workspace-github-empty workspace-github-error">
+                            Unable to load GitHub metrics: {metricsQuery.error?.message || "Please try again."}
+                        </div>
+                    ) : (
+                        <>
+                            <div className="workspace-github-metrics">
+                                <article>
+                                    <span>Open PRs</span>
+                                    <strong>{metrics.pullRequests?.open ?? 0}</strong>
+                                </article>
+                                <article>
+                                    <span>Merged · 30d</span>
+                                    <strong>{metrics.pullRequests?.merged ?? 0}</strong>
+                                </article>
+                                <article>
+                                    <span>Median merge time</span>
+                                    <strong>{formatGithubCycleTime(metrics.pullRequests?.medianCycleTimeHours)}</strong>
+                                </article>
+                                <article>
+                                    <span>Commits · 30d</span>
+                                    <strong>{metrics.commits?.count ?? 0}</strong>
+                                </article>
+                            </div>
+                            <div className="workspace-github-issues">
+                                <span>Issues · 30d</span>
+                                <span>{metrics.issues?.opened ?? 0} opened · {metrics.issues?.closed ?? 0} closed</span>
+                            </div>
+                            {recordedActivity === 0 && (
+                                <p className="workspace-github-note">
+                                    No webhook activity is recorded yet. Metrics update as GitHub deliveries are received and processed.
+                                </p>
+                            )}
+                        </>
+                    )}
+                </>
+            ) : (
+                <>
+                    <p className="workspace-github-empty-copy">
+                        {readOnly
+                            ? "This archived project has no connected repository. Restore it to connect GitHub."
+                            : "Connect a public repository to see pull request, issue, and commit activity here."}
+                    </p>
+                    {!readOnly && (
+                        <>
+                    <form className="workspace-github-form" onSubmit={handleConnect}>
+                        <label>
+                            Owner
+                            <input
+                                autoComplete="off"
+                                value={owner}
+                                onChange={(event) => setOwner(event.target.value)}
+                                placeholder="octocat"
+                                required
+                            />
+                        </label>
+                        <label>
+                            Repository
+                            <input
+                                autoComplete="off"
+                                value={repo}
+                                onChange={(event) => setRepo(event.target.value)}
+                                placeholder="hello-world"
+                                required
+                            />
+                        </label>
+                        <button
+                            className="primary-button"
+                            type="submit"
+                            disabled={connectRepository.isPending || !owner.trim() || !repo.trim()}
+                        >
+                            {connectRepository.isPending ? "Connecting…" : "Connect repository"}
+                        </button>
+                    </form>
+                    {connectRepository.isError && (
+                        <p className="workspace-github-error" role="alert">
+                            {connectRepository.error?.message || "Unable to connect this repository."}
+                        </p>
+                    )}
+                    <p className="workspace-github-note">
+                        Public repositories are supported. Private repository authorization is not configured yet.
+                    </p>
+                        </>
+                    )}
+                </>
+            )}
+        </section>
     );
 };
 
 const ProjectWorkspacePage = () => {
     const navigate = useNavigate();
     const { projectId } = useParams();
+    const { user } = useAuth();
+    const archiveMutation = useProjectArchive(projectId);
 
     useProjectRealtime(projectId);
 
@@ -405,6 +542,13 @@ const ProjectWorkspacePage = () => {
         error: dashboardError
     } = useProjectDashboard(projectId);
 
+    const hasMilestoneNamesMissing = (dashboardData?.data?.milestones ?? [])
+        .some((milestone) => !milestone.name);
+    const { data: milestoneDetails = [] } = useProjectMilestones(
+        projectId,
+        hasMilestoneNamesMissing
+    );
+
     const {
         data: healthTrendData,
         isLoading: isHealthTrendLoading,
@@ -417,6 +561,11 @@ const ProjectWorkspacePage = () => {
 
     const project =
         projectData?.data?.project;
+
+    const isProjectOwner = project && String(
+        project.owner?._id || project.owner
+    ) === String(user?._id || user?.id);
+    const isArchived = project?.status === "archived";
 
     const dashboard =
         dashboardData?.data;
@@ -539,182 +688,221 @@ const ProjectWorkspacePage = () => {
     const taskCompletion = totalTasks
         ? Math.round((completedTasks / totalTasks) * 100)
         : 0;
-    const healthScore = Number.isFinite(Number(health?.score))
-        ? Math.min(100, Math.max(0, Number(health.score)))
-        : 0;
+    const blockedTasks = taskSummary?.blockedTasks ?? 0;
+    const overdueTasks = taskSummary?.overdueTasks ?? 0;
+    const allRiskGroups = groupRiskSignals(topRisks ?? []);
+    const primaryRiskGroup = allRiskGroups[0];
+    const primaryRisk = primaryRiskGroup?.risks[0];
+    const additionalRiskGroups = allRiskGroups.slice(1);
+    const milestonesForDisplay = (milestones ?? []).map((milestone, index) => {
+        const milestoneId = String(milestone.id || milestone._id);
+        const details = milestoneDetails.find((item) =>
+            String(item.id || item._id) === milestoneId
+        );
+
+        return {
+            ...details,
+            ...milestone,
+            name: milestone.name || details?.name || `Milestone ${index + 1}`
+        };
+    });
 
     return (
         <section className="page-section workspace-page">
             <div className="page-heading workspace-heading">
                 <div>
-                    <span className="page-eyebrow">
-                        Project workspace
-                    </span>
-
                     <h1>
                         {project.name}
                     </h1>
 
-                    <p>
-                        {project.description ||
-                            "No project description provided."}
-                    </p>
-                    <div className="workspace-heading-meta">
-                        <span className="workspace-project-status">
+                    {project.description && (
+                        <p className="workspace-project-description">
+                            {project.description}
+                        </p>
+                    )}
+                    <p className="workspace-heading-meta">
+                        <span className="workspace-status-indicator" aria-label={`Project status: ${project.status || "Active"}`}>
+                            <span aria-hidden="true" />
                             {project.status || "Active"}
                         </span>
-                        <span>Execution overview</span>
-                    </div>
+                    </p>
                 </div>
 
-                <button
-                    type="button"
-                    className="primary-button"
-                    onClick={() =>
-                        navigate(
-                            "/app/projects"
-                        )
-                    }
-                >
-                    Back to projects
-                </button>
+                <div className="workspace-heading-actions">
+                    <ProjectMembersMenu
+                        project={project}
+                        currentUserId={user?._id || user?.id}
+                        isProjectOwner={isProjectOwner}
+                        isArchived={isArchived}
+                    />
+                    <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => navigate(`/app/projects/${projectId}/tasks`)}
+                    >
+                        View tasks
+                    </button>
+                    {isProjectOwner && (
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={archiveMutation.isPending}
+                            onClick={() => archiveMutation.mutate(isArchived ? "restore" : "archive")}
+                        >
+                            {archiveMutation.isPending
+                                ? "Saving…"
+                                : isArchived
+                                    ? "Restore project"
+                                    : "Archive project"}
+                        </button>
+                    )}
+                </div>
             </div>
 
-            <div className="dashboard-health-grid workspace-metrics">
-                <div className="dashboard-card dashboard-health-card workspace-health-card">
-                    <span className="dashboard-card-label">
-                        Risk-adjusted health
-                    </span>
+            {isArchived && (
+                <div className="workspace-archived-notice" role="status">
+                    <strong>Archived project</strong>
+                    <span>This project is read-only. Restore it to resume editing.</span>
+                </div>
+            )}
+            {archiveMutation.isError && (
+                <div className="workspace-archived-notice workspace-archived-error" role="alert">
+                    {archiveMutation.error?.message || "Could not update project archive status."}
+                </div>
+            )}
 
-                    <div className="workspace-health-content">
-                        <div
-                            className="workspace-health-ring"
-                            style={{ "--health-score": `${healthScore}%` }}
-                        >
-                            <span>{health?.score ?? "—"}</span>
+            <div className="workspace-signal-row">
+                <section className="workspace-health-panel" aria-label="Project health">
+                    <div className="workspace-health-panel-score">
+                        <span className="workspace-panel-label">Health score</span>
+                        <div className="workspace-health-score-value">
+                            <strong>{health?.score ?? "—"}</strong>
+                            <span>/ 100</span>
                         </div>
-                        <div>
-                            <span className="dashboard-health-status">
-                                {health?.health ?? "Unknown"}
-                            </span>
-                            <p className="dashboard-stat-description">
-                                Current execution signal
-                            </p>
+                        <span className={`dashboard-trend-status ${getHealthStatusClass(health?.health)}`}>
+                            {health?.health ?? "Unknown"}
+                        </span>
+                    </div>
+                    <div className="workspace-health-panel-progress">
+                        <span className="workspace-panel-label">Task completion</span>
+                        <strong>{taskCompletion}%</strong>
+                        <div className="workspace-task-progress" aria-label={`${taskCompletion}% of tasks completed`}>
+                            <span style={{ width: `${taskCompletion}%` }} />
                         </div>
+                        <p>{completedTasks} of {totalTasks} tasks completed</p>
                     </div>
-                </div>
+                </section>
 
-                <div className="dashboard-card">
-                    <span className="dashboard-card-label">
-                        Tasks
-                    </span>
-
-                    <p className="dashboard-stat-value">
-                        {taskSummary?.totalTasks ??
-                            0}
-                    </p>
-
-                    <p className="dashboard-stat-description">
-                        {completedTasks} completed ·{" "}
-                        {taskSummary?.blockedTasks ?? 0} blocked
-                    </p>
-                    <div
-                        className="workspace-task-progress"
-                        aria-label={`${taskCompletion}% of tasks completed`}
-                    >
-                        <span style={{ width: `${taskCompletion}%` }} />
+                <section className={`workspace-primary-risk ${primaryRisk ? `workspace-primary-risk-${String(primaryRisk.severity || "low").toLowerCase()}` : "workspace-primary-risk-clear"}`} aria-label="Priority execution insight">
+                    <div className="workspace-primary-risk-icon" aria-hidden="true">
+                        {primaryRisk ? (
+                            <svg viewBox="0 0 20 20" focusable="false"><path d="M10 2.5 18 16.5H2L10 2.5Z" /><path d="M10 7v4.5M10 14.2v.1" /></svg>
+                        ) : (
+                            <svg viewBox="0 0 20 20" focusable="false"><circle cx="10" cy="10" r="7.5" /><path d="m6.5 10 2.2 2.2 4.8-4.7" /></svg>
+                        )}
                     </div>
-                </div>
+                    <div className="workspace-primary-risk-content">
+                        <div className="workspace-primary-risk-heading">
+                            <span className="workspace-panel-label">Priority insight</span>
+                            {primaryRisk && <span className={`dashboard-risk-severity dashboard-risk-severity-${String(primaryRisk.severity || "low").toLowerCase()}`}>{primaryRisk.severity}</span>}
+                        </div>
+                        <h2>{primaryRisk ? formatRiskType(primaryRisk.type) : "No active risks detected"}</h2>
+                        <p>{primaryRisk?.message || "The current project signals show no execution risks requiring immediate attention."}</p>
+                        {primaryRisk?.evidence?.[0] && <p className="workspace-primary-risk-evidence">Evidence: {primaryRisk.evidence[0]}</p>}
+                        {primaryRiskGroup?.risks.length > 1 && (
+                            <details className="workspace-risk-related">
+                                <summary>{primaryRiskGroup.risks.length - 1} related findings</summary>
+                                <ul>
+                                    {primaryRiskGroup.risks.slice(1).map((relatedRisk) => (
+                                        <li key={relatedRisk.id}>
+                                            {relatedRisk.context?.title
+                                                ? `${relatedRisk.context.title}: `
+                                                : ""}
+                                            {relatedRisk.message}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </details>
+                        )}
+                        {primaryRisk?.nextAction?.description && <div className="workspace-primary-risk-action"><strong>Suggested next step</strong><span>{primaryRisk.nextAction.description}</span></div>}
+                    </div>
+                    {primaryRisk?.nextAction?.href && (
+                        primaryRisk.nextAction.external ? (
+                            <a className="workspace-primary-risk-link" href={primaryRisk.nextAction.href} target="_blank" rel="noreferrer">{primaryRisk.nextAction.label}<span aria-hidden="true">↗</span></a>
+                        ) : (
+                            <Link className="workspace-primary-risk-link" to={primaryRisk.nextAction.href}>{primaryRisk.nextAction.label}<span aria-hidden="true">→</span></Link>
+                        )
+                    )}
+                </section>
+            </div>
 
-                <div className="dashboard-card">
-                    <span className="dashboard-card-label">
-                        Milestones
-                    </span>
-
-                    <p className="dashboard-stat-value">
-                        {milestones?.length ??
-                            0}
-                    </p>
-
-                    <p className="dashboard-stat-description">
-                        Project milestones
-                    </p>
-                </div>
-
-                <div className="dashboard-card">
-                    <span className="dashboard-card-label">
-                        Contributors
-                    </span>
-
-                    <p className="dashboard-stat-value">
-                        {workload?.length ??
-                            0}
-                    </p>
-
-                    <p className="dashboard-stat-description">
-                        Active contributors
-                    </p>
-                </div>
+            <div className="workspace-metric-grid">
+                <article className="workspace-metric">
+                    <span className="workspace-panel-label">Blocked work</span>
+                    <strong className={blockedTasks ? "metric-warning" : ""}>{blockedTasks}</strong>
+                    <span>Unfinished tasks currently blocked</span>
+                </article>
+                <article className="workspace-metric">
+                    <span className="workspace-panel-label">Overdue work</span>
+                    <strong className={overdueTasks ? "metric-danger" : ""}>{overdueTasks}</strong>
+                    <span>Unfinished tasks past due date</span>
+                </article>
+                <article className="workspace-metric">
+                    <span className="workspace-panel-label">Active contributors</span>
+                    <strong>{workload?.length ?? 0}</strong>
+                    <span>People with assigned work in progress</span>
+                </article>
             </div>
 
             <HealthTrendSection
                 snapshots={snapshots}
                 signals={trendSignals}
                 projectId={projectId}
+                isLoading={isHealthTrendLoading}
+                error={isHealthTrendError ? healthTrendError : null}
             />
 
-            {isHealthTrendError && (
-                <div className="dashboard-trend-error">
-                    Unable to load historical health
-                    snapshots:{" "}
-                    {healthTrendError?.message ||
-                        "Something went wrong."}
-                </div>
-            )}
-
-            {isHealthTrendLoading && (
-                <div className="dashboard-section">
-                    <div className="dashboard-trend-loading">
-                        Loading health history...
-                    </div>
-                </div>
-            )}
-
-            <div
-                className="dashboard-section workspace-risk-section"
-                id="execution-risks"
-            >
+            {additionalRiskGroups.length > 0 && (
+                <div
+                    className="dashboard-section workspace-risk-section"
+                    id="execution-risks"
+                >
                 <div className="dashboard-section-header">
                     <div>
-                        <h2>Execution risks</h2>
+                        <h2>Other execution risks</h2>
 
                         <p>
-                            The most significant signals detected in the current project state.
+                            Additional signals beyond the priority risk above.
                         </p>
                     </div>
                     <span className="workspace-risk-count">
-                        {topRisks?.length ?? 0} signals
+                        {additionalRiskGroups.length} {additionalRiskGroups.length === 1 ? "category" : "categories"}
                     </span>
                 </div>
 
-                {topRisks?.length ? (
-                    <div className="dashboard-risk-list">
-                        {topRisks.map((risk) => (
-                            <article
-                                key={risk.id}
-                                className={`dashboard-risk-card workspace-risk-card workspace-risk-${String(risk.severity || "low").toLowerCase()}`}
-                            >
+                <div className="dashboard-risk-list">
+                        {additionalRiskGroups.map(({ type, risks: relatedRisks }) => {
+                            const risk = relatedRisks[0];
+                            return (
+                                <article
+                                    key={type}
+                                    className={`dashboard-risk-card workspace-risk-card workspace-risk-${String(risk.severity || "low").toLowerCase()}`}
+                                >
                                 <div className="dashboard-risk-header">
                                     <span className="dashboard-risk-type">
-                                        {formatRiskType(
-                                            risk.type
-                                        )}
+                                        {formatRiskType(type)}
                                     </span>
 
                                     <span className="dashboard-risk-severity">
                                         {risk.severity}
                                     </span>
                                 </div>
+
+                                {relatedRisks.length > 1 && (
+                                    <span className="workspace-risk-related-count">
+                                        {relatedRisks.length} related findings
+                                    </span>
+                                )}
 
                                 <p className="dashboard-risk-message">
                                     {risk.message}
@@ -731,9 +919,9 @@ const ProjectWorkspacePage = () => {
                                 )}
 
                                 {risk.evidence
-                                    ?.length > 0 && (
+                                    ?.some((evidence) => evidence !== risk.message) && (
                                     <ul className="dashboard-risk-evidence">
-                                        {risk.evidence.map(
+                                        {risk.evidence.filter((evidence) => evidence !== risk.message).map(
                                             (
                                                 evidence,
                                                 index
@@ -748,6 +936,22 @@ const ProjectWorkspacePage = () => {
                                             )
                                         )}
                                     </ul>
+                                )}
+
+                                {relatedRisks.length > 1 && (
+                                    <details className="workspace-risk-related">
+                                        <summary>Review all related findings</summary>
+                                        <ul>
+                                            {relatedRisks.map((relatedRisk) => (
+                                                <li key={relatedRisk.id}>
+                                                    {relatedRisk.context?.title
+                                                        ? `${relatedRisk.context.title}: `
+                                                        : ""}
+                                                    {relatedRisk.message}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </details>
                                 )}
 
                                 {risk.nextAction && (
@@ -779,17 +983,14 @@ const ProjectWorkspacePage = () => {
                                         )}
                                     </div>
                                 )}
-                            </article>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="dashboard-risk-empty">
-                        No active risk signals detected.
-                    </div>
-                )}
-            </div>
+                                </article>
+                            );
+                        })}
+                </div>
+                </div>
+            )}
 
-            <div className="dashboard-section" id="milestones">
+            <div className={`dashboard-section workspace-milestones-section${additionalRiskGroups.length ? "" : " workspace-milestones-wide"}`} id="milestones">
                 <div className="dashboard-section-header">
                     <h2>
                         Milestone progress
@@ -808,9 +1009,9 @@ const ProjectWorkspacePage = () => {
                     </button>
                 </div>
 
-                {milestones?.length ? (
+                {milestonesForDisplay.length ? (
                     <div className="dashboard-milestone-list">
-                        {milestones.map(
+                        {milestonesForDisplay.map(
                             (milestone) => {
                                 const progress =
                                     Math.min(
@@ -833,9 +1034,7 @@ const ProjectWorkspacePage = () => {
                                     >
                                         <div className="dashboard-milestone-header">
                                             <h3 className="dashboard-milestone-name">
-                                                {
-                                                    milestone.name
-                                                }
+                                                {milestone.name}
                                             </h3>
 
                                             <span className="dashboard-milestone-date">
@@ -889,7 +1088,9 @@ const ProjectWorkspacePage = () => {
                 )}
             </div>
 
-            <div className="dashboard-section">
+            <GithubIntegrationSection projectId={projectId} readOnly={isArchived} />
+
+            <div className="dashboard-section workspace-workload-section">
                 <div className="dashboard-section-header">
                     <h2>
                         Workload

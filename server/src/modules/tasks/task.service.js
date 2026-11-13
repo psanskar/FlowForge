@@ -4,6 +4,9 @@ const Task = require("./task.model");
 const Project = require("../projects/project.model");
 const Milestone = require("../milestones/milestone.model");
 const Dependency = require("../dependencies/dependency.model");
+const { buildProjectAccessFilter } = require("../projects/project.access");
+const { assertProjectWritable } = require("../projects/project.access");
+const { withProjectMutationLock } = require("../projects/project.mutationLock");
 const { emitToProject } = require("../../realtime/events");
 
 const createTask = async ({
@@ -25,60 +28,70 @@ const createTask = async ({
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: projectId,
-        "members.user": userId
-    });
-
-    if (!project) {
-        const error = new Error("Project not found");
-        error.statusCode = 404;
-        error.code = "PROJECT_NOT_FOUND";
-        throw error;
-    }
-
-    if (assignee) {
-        const isProjectMember = project.members.some(
-            (member) =>
-                member.user.toString() === assignee.toString()
+    const createWithSession = async ({ session }) => {
+        let projectQuery = Project.findOne(
+            buildProjectAccessFilter(projectId, userId)
         );
-
-        if (!isProjectMember) {
-            const error = new Error(
-                "Assignee must be a member of the project"
-            );
-
-            error.statusCode = 422;
-            error.code = "INVALID_TASK_ASSIGNEE";
-
-            throw error;
+        if (session) {
+            projectQuery = projectQuery.session(session);
         }
-    }
+        const project = await projectQuery;
 
-    if (milestone) {
-        if (!mongoose.isValidObjectId(milestone)) {
-            const error = new Error("Milestone not found");
+        if (!project) {
+            const error = new Error("Project not found");
             error.statusCode = 404;
-            error.code = "MILESTONE_NOT_FOUND";
+            error.code = "PROJECT_NOT_FOUND";
             throw error;
         }
+        assertProjectWritable(project);
 
-        const existingMilestone = await Milestone.findOne({
-            _id: milestone,
-            project: projectId
-        });
+        if (assignee) {
+            const isProjectMember =
+                project.owner.toString() === assignee.toString() ||
+                project.members.some(
+                    (member) => member.user.toString() === assignee.toString()
+                );
 
-        if (!existingMilestone) {
-            const error = new Error(
-                "Milestone does not belong to this project"
-            );
+            if (!isProjectMember) {
+                const error = new Error(
+                    "Assignee must be a member of the project"
+                );
 
-            error.statusCode = 422;
-            error.code = "INVALID_TASK_MILESTONE";
+                error.statusCode = 422;
+                error.code = "INVALID_TASK_ASSIGNEE";
 
-            throw error;
+                throw error;
+            }
         }
-    }
+
+        if (milestone) {
+            if (!mongoose.isValidObjectId(milestone)) {
+                const error = new Error("Milestone not found");
+                error.statusCode = 404;
+                error.code = "MILESTONE_NOT_FOUND";
+                throw error;
+            }
+
+            let milestoneQuery = Milestone.findOne({
+                _id: milestone,
+                project: projectId
+            });
+            if (session) {
+                milestoneQuery = milestoneQuery.session(session);
+            }
+            const existingMilestone = await milestoneQuery;
+
+            if (!existingMilestone) {
+                const error = new Error(
+                    "Milestone does not belong to this project"
+                );
+
+                error.statusCode = 422;
+                error.code = "INVALID_TASK_MILESTONE";
+
+                throw error;
+            }
+        }
 
     let normalizedProgress = progress;
     let startedAt = null;
@@ -105,7 +118,7 @@ const createTask = async ({
         completedAt = new Date();
     }
 
-    const task = await Task.create({
+        const task = new Task({
         project: projectId,
         title: title.trim(),
         description: description?.trim() || "",
@@ -119,10 +132,21 @@ const createTask = async ({
         completedAt,
         lastActivityAt: new Date(),
         createdBy: userId,
-        version: 1
-    });
+            version: 1
+        });
 
-    return task;
+        if (session) {
+            await task.save({ session });
+        } else {
+            await task.save();
+        }
+
+        return task;
+    };
+
+    return assignee
+        ? withProjectMutationLock(projectId, createWithSession)
+        : createWithSession({ session: null });
 };
 
 const listTasks = async (
@@ -144,10 +168,9 @@ const listTasks = async (
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: projectId,
-        "members.user": userId
-    });
+    const project = await Project.findOne(
+        buildProjectAccessFilter(projectId, userId)
+    );
 
     if (!project) {
         const error = new Error("Project not found");
@@ -234,10 +257,9 @@ const getTaskById = async (taskId, userId) => {
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: task.project,
-        "members.user": userId
-    }).select("_id");
+    const project = await Project.findOne(
+        buildProjectAccessFilter(task.project, userId)
+    ).select("_id");
 
     if (!project) {
         const error = new Error("Task not found");
@@ -257,209 +279,209 @@ const updateTask = async ({ taskId, userId, version, updates }) => {
         throw error;
     }
 
-    const task = await Task.findById(taskId);
+    const taskReference = await Task.findById(taskId).select("project");
 
-    if (!task) {
+    if (!taskReference) {
         const error = new Error("Task not found");
         error.statusCode = 404;
         error.code = "TASK_NOT_FOUND";
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: task.project,
-        "members.user": userId
-    }).select("_id");
-
-    if (!project) {
-        const error = new Error("Task not found");
-        error.statusCode = 404;
-        error.code = "TASK_NOT_FOUND";
-        throw error;
-    }
-
-    const nextState = {
-        title: task.title,
-        description: task.description,
-        status: task.status,
-        priority: task.priority,
-        assignee: task.assignee,
-        milestone: task.milestone,
-        dueDate: task.dueDate,
-        progress: task.progress,
-        startedAt: task.startedAt,
-        completedAt: task.completedAt
-    };
-
-    const allowedFields = [
-        "title",
-        "description",
-        "status",
-        "priority",
-        "assignee",
-        "milestone",
-        "dueDate",
-        "progress"
-    ];
-
-    for (const field of allowedFields) {
-        if (updates[field] !== undefined) {
-            nextState[field] = updates[field];
+    const updateWithSession = async ({ session }) => {
+        let taskQuery = Task.findById(taskId);
+        if (session) {
+            taskQuery = taskQuery.session(session);
         }
-    }
+        const task = await taskQuery;
 
-    if (updates.title !== undefined) {
-        nextState.title = updates.title.trim();
-    }
-
-    if (updates.description !== undefined) {
-        nextState.description = updates.description.trim();
-    }
-
-    if (
-        updates.assignee !== undefined &&
-        updates.assignee !== null
-    ) {
-        const isProjectMember = await Project.findOne({
-            _id: task.project,
-            "members.user": updates.assignee
-        }).select("_id");
-
-        if (!isProjectMember) {
-            const error = new Error(
-                "Assignee must be a member of the project"
-            );
-
-            error.statusCode = 422;
-            error.code = "INVALID_TASK_ASSIGNEE";
-
+        if (!task) {
+            const error = new Error("Task not found");
+            error.statusCode = 404;
+            error.code = "TASK_NOT_FOUND";
             throw error;
         }
-    }
 
-    if (
-        updates.milestone !== undefined &&
-        updates.milestone !== null
-    ) {
-        const milestone = await Milestone.findOne({
-            _id: updates.milestone,
-            project: task.project
-        }).select("_id");
+        let projectQuery = Project.findOne(
+            buildProjectAccessFilter(task.project, userId)
+        ).select("_id status");
+        if (session) {
+            projectQuery = projectQuery.session(session);
+        }
+        const project = await projectQuery;
 
-        if (!milestone) {
-            const error = new Error(
-                "Milestone does not belong to this project"
-            );
-
-            error.statusCode = 422;
-            error.code = "INVALID_TASK_MILESTONE";
-
+        if (!project) {
+            const error = new Error("Task not found");
+            error.statusCode = 404;
+            error.code = "TASK_NOT_FOUND";
             throw error;
         }
-    }
+        assertProjectWritable(project);
 
-    if (
-        updates.dueDate !== undefined &&
-        updates.dueDate !== null
-    ) {
-        nextState.dueDate = new Date(updates.dueDate);
-    }
+        const nextState = {
+            title: task.title,
+            description: task.description,
+            status: task.status,
+            priority: task.priority,
+            assignee: task.assignee,
+            milestone: task.milestone,
+            dueDate: task.dueDate,
+            progress: task.progress,
+            startedAt: task.startedAt,
+            completedAt: task.completedAt
+        };
 
-    const statusWasUpdated = updates.status !== undefined;
-    const progressWasUpdated = updates.progress !== undefined;
+        const allowedFields = [
+            "title",
+            "description",
+            "status",
+            "priority",
+            "assignee",
+            "milestone",
+            "dueDate",
+            "progress"
+        ];
 
-    if (statusWasUpdated) {
-        if (nextState.status === "todo") {
-            nextState.progress = 0;
-        }
-
-        if (
-            nextState.status === "in_progress" ||
-            nextState.status === "blocked"
-        ) {
-            if (nextState.progress === 0) {
-                nextState.progress = 1;
+        for (const field of allowedFields) {
+            if (updates[field] !== undefined) {
+                nextState[field] = updates[field];
             }
         }
 
-        if (nextState.status === "completed") {
-            nextState.progress = 100;
+        if (updates.title !== undefined) {
+            nextState.title = updates.title.trim();
         }
-    } else if (progressWasUpdated) {
-        if (
-            nextState.status === "in_progress" ||
-            nextState.status === "blocked"
-        ) {
-            if (nextState.progress === 0) {
-                nextState.progress = 1;
+
+        if (updates.description !== undefined) {
+            nextState.description = updates.description.trim();
+        }
+
+        if (updates.assignee !== undefined && updates.assignee !== null) {
+            let assigneeQuery = Project.findOne(
+                buildProjectAccessFilter(task.project, updates.assignee)
+            ).select("_id");
+            if (session) {
+                assigneeQuery = assigneeQuery.session(session);
+            }
+            const isProjectMember = await assigneeQuery;
+
+            if (!isProjectMember) {
+                const error = new Error(
+                    "Assignee must be a member of the project"
+                );
+                error.statusCode = 422;
+                error.code = "INVALID_TASK_ASSIGNEE";
+                throw error;
             }
         }
 
+        if (updates.milestone !== undefined && updates.milestone !== null) {
+            let milestoneQuery = Milestone.findOne({
+                _id: updates.milestone,
+                project: task.project
+            }).select("_id");
+            if (session) {
+                milestoneQuery = milestoneQuery.session(session);
+            }
+            const milestone = await milestoneQuery;
+
+            if (!milestone) {
+                const error = new Error(
+                    "Milestone does not belong to this project"
+                );
+                error.statusCode = 422;
+                error.code = "INVALID_TASK_MILESTONE";
+                throw error;
+            }
+        }
+
+        if (updates.dueDate !== undefined && updates.dueDate !== null) {
+            nextState.dueDate = new Date(updates.dueDate);
+        }
+
+        const statusWasUpdated = updates.status !== undefined;
+        const progressWasUpdated = updates.progress !== undefined;
+
+        if (statusWasUpdated) {
+            if (nextState.status === "todo") {
+                nextState.progress = 0;
+            }
+            if (
+                (nextState.status === "in_progress" || nextState.status === "blocked") &&
+                nextState.progress === 0
+            ) {
+                nextState.progress = 1;
+            }
+            if (nextState.status === "completed") {
+                nextState.progress = 100;
+            }
+        } else if (progressWasUpdated) {
+            if (
+                (nextState.status === "in_progress" || nextState.status === "blocked") &&
+                nextState.progress === 0
+            ) {
+                nextState.progress = 1;
+            }
+            if (nextState.status === "completed") {
+                nextState.progress = 100;
+            }
+            if (nextState.status === "todo") {
+                nextState.progress = 0;
+            }
+        }
+
+        if (nextState.status !== "todo" && !nextState.startedAt) {
+            nextState.startedAt = new Date();
+        }
+
         if (nextState.status === "completed") {
-            nextState.progress = 100;
+            if (!nextState.completedAt) {
+                nextState.completedAt = new Date();
+            }
+        } else {
+            nextState.completedAt = null;
         }
 
-        if (nextState.status === "todo") {
-            nextState.progress = 0;
-        }
-    }
-
-    if (
-        nextState.status !== "todo" &&
-        !nextState.startedAt
-    ) {
-        nextState.startedAt = new Date();
-    }
-
-    if (nextState.status === "completed") {
-        if (!nextState.completedAt) {
-            nextState.completedAt = new Date();
-        }
-    } else {
-        nextState.completedAt = null;
-    }
-
-    const now = new Date();
-
-    const updatedTask = await Task.findOneAndUpdate(
-        {
-            _id: taskId,
-            version: version
-        },
-        {
-            $set: {
-                title: nextState.title,
-                description: nextState.description,
-                status: nextState.status,
-                priority: nextState.priority,
-                assignee: nextState.assignee,
-                milestone: nextState.milestone,
-                dueDate: nextState.dueDate,
-                progress: nextState.progress,
-                startedAt: nextState.startedAt,
-                completedAt: nextState.completedAt,
-                lastActivityAt: now
+        const updatedTaskResult = await Task.findOneAndUpdate(
+            { _id: taskId, version },
+            {
+                $set: {
+                    title: nextState.title,
+                    description: nextState.description,
+                    status: nextState.status,
+                    priority: nextState.priority,
+                    assignee: nextState.assignee,
+                    milestone: nextState.milestone,
+                    dueDate: nextState.dueDate,
+                    progress: nextState.progress,
+                    startedAt: nextState.startedAt,
+                    completedAt: nextState.completedAt,
+                    lastActivityAt: new Date()
+                },
+                $inc: { version: 1 }
             },
-            $inc: {
-                version: 1
+            {
+                returnDocument: "after",
+                runValidators: true,
+                ...(session ? { session } : {})
             }
-        },
-        {
-            returnDocument: "after",
-            runValidators: true
-        }
-    );
-
-    if (!updatedTask) {
-        const error = new Error(
-            "Task was modified by another request"
         );
 
-        error.statusCode = 409;
-        error.code = "TASK_VERSION_CONFLICT";
+        if (!updatedTaskResult) {
+            const error = new Error(
+                "Task was modified by another request"
+            );
+            error.statusCode = 409;
+            error.code = "TASK_VERSION_CONFLICT";
+            throw error;
+        }
 
-        throw error;
-    }
+        return updatedTaskResult;
+    };
+
+    const updatedTask = updates.assignee !== undefined
+        ? await withProjectMutationLock(taskReference.project, updateWithSession)
+        : await updateWithSession({ session: null });
 
     emitToProject(
         updatedTask.project.toString(),
@@ -489,10 +511,9 @@ const deleteTask = async (taskId, userId) => {
         throw error;
     }
 
-    const project = await Project.findOne({
-        _id: task.project,
-        "members.user": userId
-    }).select("_id");
+    const project = await Project.findOne(
+        buildProjectAccessFilter(task.project, userId)
+    ).select("_id status");
 
     if (!project) {
         const error = new Error("Task not found");
@@ -500,6 +521,7 @@ const deleteTask = async (taskId, userId) => {
         error.code = "TASK_NOT_FOUND";
         throw error;
     }
+    assertProjectWritable(project);
 
     const dependencyExists = await Dependency.exists({
         project: task.project,
@@ -520,9 +542,7 @@ const deleteTask = async (taskId, userId) => {
         throw error;
     }
 
-    await Task.deleteOne({
-        _id: taskId
-    });
+    await Task.deleteOne({ _id: taskId });
 
     return;
 };

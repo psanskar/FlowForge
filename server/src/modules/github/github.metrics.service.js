@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Project = require(
     "../projects/project.model"
 );
+const { buildProjectAccessFilter } = require("../projects/project.access");
 
 const GithubSignal = require(
     "./github.signal.model"
@@ -418,10 +419,9 @@ const getGithubExecutionMetrics = async ({
     }
 
     const project =
-        await Project.findOne({
-            _id: projectId,
-            "members.user": userId
-        })
+        await Project.findOne(
+            buildProjectAccessFilter(projectId, userId)
+        )
             .select("_id")
             .lean();
 

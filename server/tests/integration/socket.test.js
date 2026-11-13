@@ -255,6 +255,41 @@ describe("Socket.IO integration", () => {
         socket.disconnect();
     });
 
+    test("evicts a removed member from all project rooms and denies rejoining", async () => {
+        await Project.updateOne(
+            { _id: project._id },
+            { $push: { members: { user: unauthorizedUser._id } } }
+        );
+
+        const memberToken = createToken(unauthorizedUser._id);
+        const socket = createSocketClient(memberToken);
+        await connectSocket(socket);
+
+        const joinResponse = await new Promise((resolve) => {
+            socket.emit("project:join", project._id.toString(), resolve);
+        });
+        expect(joinResponse.success).toBe(true);
+
+        const removalResponse = await request(app)
+            .delete(`/api/v1/projects/${project._id}/members/${unauthorizedUser._id}`)
+            .set("Authorization", `Bearer ${createToken(user._id)}`);
+        expect(removalResponse.status).toBe(200);
+
+        const connectedMemberSockets = await getIO()
+            .in(`user:${unauthorizedUser._id}`)
+            .fetchSockets();
+        expect(connectedMemberSockets).toHaveLength(1);
+        expect(connectedMemberSockets[0].rooms.has(`project:${project._id}`)).toBe(false);
+
+        const rejoinResponse = await new Promise((resolve) => {
+            socket.emit("project:join", project._id.toString(), resolve);
+        });
+        expect(rejoinResponse.success).toBe(false);
+        expect(rejoinResponse.error.code).toBe("PROJECT_ACCESS_DENIED");
+
+        socket.disconnect();
+    });
+
     test("isolates events between project rooms", async () => {
         const token = createToken(user._id);
 

@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
 const Project = require("../projects/project.model");
+const { buildProjectAccessFilter } = require("../projects/project.access");
 const ProjectRiskHistory = require(
     "./project.risk.history.model"
 );
@@ -36,10 +37,9 @@ const getProjectForMember = async (
     projectId,
     userId
 ) => {
-    const project = await Project.findOne({
-        _id: projectId,
-        "members.user": userId
-    })
+    const project = await Project.findOne(
+        buildProjectAccessFilter(projectId, userId)
+    )
         .select("_id")
         .lean();
 

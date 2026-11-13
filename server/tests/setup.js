@@ -1,4 +1,7 @@
 const mongoose = require("mongoose");
+const {
+    closeAuthRateLimitStore
+} = require("../src/middleware/authRateLimit.middleware");
 
 const {
     TEST_DATABASE_NAME,
@@ -34,6 +37,8 @@ beforeAll(async () => {
 }, 10000);
 
 afterAll(async () => {
+    await closeAuthRateLimitStore();
+
     if (mongoose.connection.readyState !== 0) {
         if (mongoose.connection.name !== TEST_DATABASE_NAME) {
             await mongoose.connection.close();

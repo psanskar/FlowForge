@@ -51,7 +51,7 @@ const run = async () => {
             name: "FlowForge Demo",
             description: "Disposable project for FlowForge demonstrations and performance checks.",
             owner: owner._id,
-            members: [{ user: owner._id, role: "owner" }],
+            members: [{ user: owner._id }],
             status: "active",
             startDate: now,
             targetDate: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000)

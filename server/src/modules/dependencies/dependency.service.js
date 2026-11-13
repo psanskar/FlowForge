@@ -2,6 +2,10 @@ const mongoose = require("mongoose");
 
 const Dependency = require("./dependency.model");
 const {
+    buildProjectAccessFilter,
+    assertProjectWritable
+} = require("../projects/project.access");
+const {
     withDependencyGraphLock
 } = require("./dependencyGraphLock.service");
 const Project = require("../projects/project.model");
@@ -89,10 +93,9 @@ const createDependency = async ({
     }
 
     // Verify that the authenticated user belongs to the project.
-    const project = await Project.findOne({
-        _id: projectId,
-        "members.user": userId
-    }).select("_id");
+    const project = await Project.findOne(
+        buildProjectAccessFilter(projectId, userId)
+    ).select("_id status");
 
     if (!project) {
         const error = new Error("Project not found");
@@ -100,6 +103,7 @@ const createDependency = async ({
         error.code = "PROJECT_NOT_FOUND";
         throw error;
     }
+    assertProjectWritable(project);
 
     // Fetch both tasks.
     const tasks = await Task.find({
@@ -188,10 +192,9 @@ const listDependencies = async (
     userId
 ) => {
     // Verify project membership.
-    const project = await Project.findOne({
-        _id: projectId,
-        "members.user": userId
-    }).select("_id");
+    const project = await Project.findOne(
+        buildProjectAccessFilter(projectId, userId)
+    ).select("_id");
 
     if (!project) {
         const error = new Error("Project not found");
@@ -199,7 +202,6 @@ const listDependencies = async (
         error.code = "PROJECT_NOT_FOUND";
         throw error;
     }
-
     const dependencies = await Dependency.find({
         project: projectId
     })
@@ -243,10 +245,9 @@ const deleteDependency = async ({
     }
 
     // Verify that the user belongs to the dependency's project.
-    const project = await Project.findOne({
-        _id: dependency.project,
-        "members.user": userId
-    }).select("_id");
+    const project = await Project.findOne(
+        buildProjectAccessFilter(dependency.project, userId)
+    ).select("_id status");
 
     if (!project) {
         const error = new Error("Dependency not found");
@@ -254,6 +255,7 @@ const deleteDependency = async ({
         error.code = "DEPENDENCY_NOT_FOUND";
         throw error;
     }
+    assertProjectWritable(project);
 
     await Dependency.deleteOne({
         _id: dependencyId

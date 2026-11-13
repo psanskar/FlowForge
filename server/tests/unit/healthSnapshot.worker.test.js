@@ -163,7 +163,7 @@ describe("Health Snapshot Worker", () => {
         ).not.toHaveBeenCalled();
     });
 
-    it("fails when the project does not exist", async () => {
+    it("skips queued jobs when the project no longer exists", async () => {
         const projectId =
             new mongoose.Types.ObjectId();
 
@@ -177,15 +177,44 @@ describe("Health Snapshot Worker", () => {
         await expect(
             processor({
                 data: {
-                    projectId:
-                        projectId.toString(),
-                    snapshotDate:
-                        "2026-09-19"
+                    projectId: projectId.toString(),
+                    snapshotDate: "2026-09-19"
                 }
             })
-        ).rejects.toThrow(
-            `Project ${projectId} not found`
-        );
+        ).resolves.toEqual({
+            skipped: true,
+            reason: "PROJECT_NOT_FOUND",
+            projectId: projectId.toString()
+        });
+
+        expect(captureProjectHealthSnapshot).not.toHaveBeenCalled();
+    });
+
+    it("skips queued jobs for archived projects", async () => {
+        const projectId = new mongoose.Types.ObjectId();
+
+        jest.spyOn(Project, "findById").mockReturnValue({
+            select: jest.fn().mockResolvedValue({
+                _id: projectId,
+                owner: new mongoose.Types.ObjectId(),
+                status: "archived"
+            })
+        });
+
+        await expect(
+            processor({
+                data: {
+                    projectId: projectId.toString(),
+                    snapshotDate: "2026-09-19"
+                }
+            })
+        ).resolves.toEqual({
+            skipped: true,
+            reason: "PROJECT_NOT_ACTIVE",
+            projectId: projectId.toString()
+        });
+
+        expect(captureProjectHealthSnapshot).not.toHaveBeenCalled();
     });
 
     it("fails when the project has no owner", async () => {

@@ -1,5 +1,6 @@
 const GithubRepository =
     require("./github.model");
+const Project = require("../projects/project.model");
 
 const githubSignalService =
     require("./github.signal.service");
@@ -169,6 +170,22 @@ const processGithubWebhook =
             await findRepositoryFromPayload(
                 payload
             );
+
+        const project = await Project.findById(
+            repository.project
+        ).select("_id status").lean();
+
+        // Archived projects retain their GitHub connection and history, but
+        // deliveries received after archive are acknowledged without adding
+        // new project activity or triggering webhook retries.
+        if (!project || project.status === "archived") {
+            return {
+                repository,
+                signals: [],
+                skipped: true,
+                reason: project ? "PROJECT_ARCHIVED" : "PROJECT_NOT_FOUND"
+            };
+        }
 
         let signals = [];
 

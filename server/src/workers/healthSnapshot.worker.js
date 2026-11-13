@@ -64,9 +64,11 @@ const processHealthSnapshotJob =
             );
 
         if (!project) {
-            throw new Error(
-                `Project ${projectId} not found`
-            );
+            return {
+                skipped: true,
+                reason: "PROJECT_NOT_FOUND",
+                projectId: projectId.toString()
+            };
         }
 
         if (

@@ -5,6 +5,7 @@ const GithubRepository =
 
 const GithubSignal =
     require("../../src/modules/github/github.signal.model");
+const Project = require("../../src/modules/projects/project.model");
 
 const {
     processGithubWebhook
@@ -22,8 +23,14 @@ describe(
             await GithubSignal.deleteMany({});
             await GithubRepository.deleteMany({});
 
-            projectId =
-                new mongoose.Types.ObjectId();
+            const ownerId = new mongoose.Types.ObjectId();
+            const project = await Project.create({
+                name: "Webhook integration project",
+                owner: ownerId,
+                members: [{ user: ownerId }],
+                status: "active"
+            });
+            projectId = project._id;
 
             repository =
                 await GithubRepository.create({
@@ -249,5 +256,57 @@ describe(
                 });
             }
         );
+
+        test("acknowledges GitHub deliveries for archived projects without persisting signals", async () => {
+            await Project.updateOne(
+                { _id: projectId },
+                { $set: { status: "archived" } }
+            );
+
+            const result = await processGithubWebhook({
+                event: "push",
+                payload: {
+                    repository: { id: 12345 },
+                    ref: "refs/heads/main",
+                    commits: [{
+                        id: "commit-for-archived-project",
+                        message: "A commit after archive",
+                        timestamp: "2026-09-17T10:00:00Z"
+                    }]
+                }
+            });
+
+            expect(result).toMatchObject({
+                skipped: true,
+                reason: "PROJECT_ARCHIVED",
+                signals: []
+            });
+            await expect(
+                GithubSignal.countDocuments({ project: projectId })
+            ).resolves.toBe(0);
+        });
+
+        test("acknowledges queued GitHub deliveries after project removal", async () => {
+            await Project.deleteOne({ _id: projectId });
+
+            const result = await processGithubWebhook({
+                event: "push",
+                payload: {
+                    repository: { id: 12345 },
+                    ref: "refs/heads/main",
+                    commits: [{
+                        id: "commit-for-removed-project",
+                        message: "A queued commit",
+                        timestamp: "2026-09-17T10:00:00Z"
+                    }]
+                }
+            });
+
+            expect(result).toMatchObject({
+                skipped: true,
+                reason: "PROJECT_NOT_FOUND",
+                signals: []
+            });
+        });
     }
 );

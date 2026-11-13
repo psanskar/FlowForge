@@ -107,7 +107,48 @@ const validateProjectListQuery = (req, res, next) => {
     next();
 };
 
+const sendValidationError = (res, details) => res.status(422).json({
+    success: false,
+    error: {
+        code: "VALIDATION_ERROR",
+        message: "Request validation failed",
+        details
+    }
+});
+
+const validateAddProjectMember = (req, res, next) => {
+    const { email } = req.body;
+
+    if (
+        typeof email !== "string" ||
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+    ) {
+        return sendValidationError(res, {
+            email: "A valid account email is required"
+        });
+    }
+
+    next();
+};
+
+const validateTransferProjectOwnership = (req, res, next) => {
+    const { newOwnerId } = req.body;
+
+    if (
+        typeof newOwnerId !== "string" ||
+        !/^[a-f\d]{24}$/i.test(newOwnerId)
+    ) {
+        return sendValidationError(res, {
+            newOwnerId: "A valid project member ID is required"
+        });
+    }
+
+    next();
+};
+
 module.exports = {
     validateCreateProject,
-    validateProjectListQuery
+    validateProjectListQuery,
+    validateAddProjectMember,
+    validateTransferProjectOwnership
 };

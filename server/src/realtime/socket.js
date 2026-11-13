@@ -3,6 +3,7 @@ const jwt = require("jsonwebtoken");
 const getClientOrigins = require("../config/clientOrigins");
 
 const Project = require("../modules/projects/project.model");
+const { buildProjectAccessFilter } = require("../modules/projects/project.access");
 const { initializeRealtime } = require("./events");
 
 let io;
@@ -47,16 +48,17 @@ const initializeSocket = (httpServer) => {
     io.use(authenticateSocket);
 
     io.on("connection", (socket) => {
+        socket.join(`user:${socket.user.id}`);
+
         console.log(
             `Socket connected: ${socket.id} (user: ${socket.user.id})`
         );
 
         socket.on("project:join", async (projectId, callback) => {
             try {
-                const project = await Project.findOne({
-                    _id: projectId,
-                    "members.user": socket.user.id
-                })
+                const project = await Project.findOne(
+                    buildProjectAccessFilter(projectId, socket.user.id)
+                )
                     .select("_id")
                     .lean();
 
@@ -131,7 +133,18 @@ const getIO = () => {
     return io;
 };
 
+const removeProjectRoomForUser = async (projectId, userId) => {
+    if (!io) {
+        return;
+    }
+
+    await io
+        .in(`user:${userId}`)
+        .socketsLeave(`project:${projectId}`);
+};
+
 module.exports = {
     initializeSocket,
-    getIO
+    getIO,
+    removeProjectRoomForUser
 };

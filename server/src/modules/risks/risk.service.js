@@ -1,12 +1,12 @@
 const mongoose = require("mongoose");
 
-const Project = require("../projects/project.model");
 const Task = require("../tasks/task.model");
 const Dependency = require("../dependencies/dependency.model");
 const Milestone = require("../milestones/milestone.model");
 const GithubSignal = require(
     "../github/github.signal.model"
 );
+const { getProjectForMember } = require("../projects/project.access");
 
 const { analyzeProject } = require("./risk.engine");
 
@@ -29,26 +29,6 @@ const validateProjectId = (projectId) => {
     }
 };
 
-const getProjectForMember = async (
-    projectId,
-    userId
-) => {
-    const project = await Project.findOne({
-        _id: projectId,
-        "members.user": userId
-    }).lean();
-
-    if (!project) {
-        throw createError(
-            404,
-            "PROJECT_NOT_FOUND",
-            "Project not found"
-        );
-    }
-
-    return project;
-};
-
 const loadProjectRiskData = async (projectId, userId) => {
     if (!mongoose.isValidObjectId(projectId)) {
         throw createError(
@@ -58,29 +38,7 @@ const loadProjectRiskData = async (projectId, userId) => {
         );
     }
 
-    const project = await Project.findById(projectId);
-
-    if (!project) {
-        throw createError(
-            404,
-            "PROJECT_NOT_FOUND",
-            "Project not found"
-        );
-    }
-
-    const isMember = project.members.some(
-        (member) =>
-            member.user.toString() ===
-            userId.toString()
-    );
-
-    if (!isMember) {
-        throw createError(
-            404,
-            "PROJECT_NOT_FOUND",
-            "Project not found"
-        );
-    }
+    const project = await getProjectForMember(projectId, userId);
 
     const [
         tasks,
