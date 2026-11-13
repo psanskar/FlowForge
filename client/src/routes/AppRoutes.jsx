@@ -17,17 +17,49 @@ import CreateTaskPage from "../pages/CreateTaskPage";
 import CreateMilestonePage from "../pages/CreateMilestonePage";
 import TaskDetailPage from "../pages/TaskDetailPage";
 import EditTaskPage from "../pages/EditTaskPage";
+import ProjectInvitationsPage from "../pages/ProjectInvitationsPage";
 
 import AppLayout from "../layouts/AppLayout";
 
 const ProtectedRoute = ({ children }) => {
     const {
         isAuthenticated,
-        isLoading
+        isLoading,
+        token,
+        authRestoreError,
+        retryAuthenticationRestore,
+        logout
     } = useAuth();
 
     if (isLoading) {
         return <p>Loading...</p>;
+    }
+
+    if (token && authRestoreError) {
+        return (
+            <section className="page-section">
+                <div className="empty-state" role="alert">
+                    <h2>Connection interrupted</h2>
+                    <p>{authRestoreError}</p>
+                    <div className="empty-state-actions">
+                        <button
+                            type="button"
+                            className="primary-button"
+                            onClick={retryAuthenticationRestore}
+                        >
+                            Retry connection
+                        </button>
+                        <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={logout}
+                        >
+                            Sign in again
+                        </button>
+                    </div>
+                </div>
+            </section>
+        );
     }
 
     if (!isAuthenticated) {
@@ -72,6 +104,8 @@ const AppRoutes = () => {
                     path="projects"
                     element={<ProjectsPage />}
                 />
+
+                <Route path="invitations" element={<ProjectInvitationsPage />} />
 
                 <Route
                     path="projects/new"

@@ -9,10 +9,17 @@ const useProjectMembership = (projectId) => {
 
     const mutation = useMutation({
         mutationFn: ({ action, memberId, email }) => {
-            if (action === "add") {
+            if (action === "invite") {
                 return apiRequest(`/projects/${projectId}/members`, {
                     method: "POST",
                     body: { email },
+                    token
+                });
+            }
+
+            if (action === "cancel-invitation") {
+                return apiRequest(`/projects/${projectId}/invitations/${memberId}`, {
+                    method: "DELETE",
                     token
                 });
             }
@@ -37,11 +44,20 @@ const useProjectMembership = (projectId) => {
                 token
             });
         },
-        onSuccess: async () => {
+        onSuccess: async (_data, variables) => {
+            if (variables.action === "leave") {
+                // The member no longer has access; don't refetch the detail
+                // query and turn a successful leave into a stale 404 screen.
+                queryClient.removeQueries({ queryKey: ["project", projectId], exact: true });
+            } else {
+                await queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+            }
+
             await Promise.all([
-                queryClient.invalidateQueries({ queryKey: ["project", projectId] }),
                 queryClient.invalidateQueries({ queryKey: ["projects"] }),
-                queryClient.invalidateQueries({ queryKey: ["project-dashboard", projectId] })
+                variables.action === "leave"
+                    ? Promise.resolve()
+                    : queryClient.invalidateQueries({ queryKey: ["project-dashboard", projectId] })
             ]);
         }
     });

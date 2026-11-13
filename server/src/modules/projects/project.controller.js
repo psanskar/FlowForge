@@ -85,18 +85,75 @@ const restoreProject = async (req, res, next) => {
     }
 };
 
-const addProjectMember = async (req, res, next) => {
+const createProjectInvitation = async (req, res, next) => {
     try {
-        const member = await membershipService.addProjectMember({
+        const result = await membershipService.createProjectInvitation({
             projectId: req.params.projectId,
             userId: req.user.id,
             email: req.body.email
         });
 
-        res.status(201).json({ success: true, data: { member } });
+        res.status(201).json({
+            success: true,
+            data: {
+                invitation: result.invitation,
+                invitee: result.user,
+                projectId: result.projectId
+            }
+        });
     } catch (error) {
         next(error);
     }
+};
+
+const listIncomingInvitations = async (req, res, next) => {
+    try {
+        const invitations = await membershipService.listIncomingInvitations(req.user.id);
+        res.status(200).json({ success: true, data: { invitations } });
+    } catch (error) { next(error); }
+};
+
+const listProjectInvitations = async (req, res, next) => {
+    try {
+        const invitations = await membershipService.listProjectInvitations({
+            projectId: req.params.projectId,
+            userId: req.user.id
+        });
+        res.status(200).json({ success: true, data: { invitations } });
+    } catch (error) { next(error); }
+};
+
+const acceptProjectInvitation = async (req, res, next) => {
+    try {
+        const result = await membershipService.respondToInvitation({
+            invitationId: req.params.invitationId,
+            userId: req.user.id,
+            accept: true
+        });
+        res.status(200).json({ success: true, data: result });
+    } catch (error) { next(error); }
+};
+
+const declineProjectInvitation = async (req, res, next) => {
+    try {
+        const result = await membershipService.respondToInvitation({
+            invitationId: req.params.invitationId,
+            userId: req.user.id,
+            accept: false
+        });
+        res.status(200).json({ success: true, data: result });
+    } catch (error) { next(error); }
+};
+
+const cancelProjectInvitation = async (req, res, next) => {
+    try {
+        const result = await membershipService.cancelProjectInvitation({
+            projectId: req.params.projectId,
+            invitationId: req.params.invitationId,
+            userId: req.user.id
+        });
+        res.status(200).json({ success: true, data: result });
+    } catch (error) { next(error); }
 };
 
 const removeProjectMember = async (req, res, next) => {
@@ -152,7 +209,12 @@ module.exports = {
     getProject,
     archiveProject,
     restoreProject,
-    addProjectMember,
+    createProjectInvitation,
+    listIncomingInvitations,
+    listProjectInvitations,
+    acceptProjectInvitation,
+    declineProjectInvitation,
+    cancelProjectInvitation,
     removeProjectMember,
     leaveProject,
     transferProjectOwnership

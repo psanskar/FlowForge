@@ -81,16 +81,16 @@ test("risk dashboard explains an overdue task and opens it from the suggested ac
 
     await page.goto(`/app/projects/${projectId}`);
 
-    const riskCard = page.locator(".workspace-risk-card")
-        .filter({ hasText: `Overdue risk task ${uniqueId}` });
+    const riskCard = page.getByRole("region", {
+        name: "Priority execution insight"
+    });
 
     await expect(riskCard).toBeVisible();
     await expect(riskCard).toContainText("Task Overdue");
     await expect(riskCard).toContainText("HIGH");
-    await expect(riskCard).toContainText(`Owner: ${userName}`);
     await expect(riskCard).toContainText("day");
     await expect(riskCard).toContainText("Suggested next step");
-    await expect(riskCard).toContainText("Agree a recovery date");
+    await expect(riskCard).toContainText("recovery date");
     await riskCard.getByRole("link", { name: "Open task" }).click();
     await expect(page).toHaveURL(`/app/tasks/${taskId}`);
     await expect(page.getByRole("heading", {

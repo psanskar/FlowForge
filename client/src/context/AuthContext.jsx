@@ -19,11 +19,15 @@ export const AuthProvider = ({ children }) => {
     const [isLoading, setIsLoading] = useState(
         Boolean(token)
     );
+    const [authRestoreError, setAuthRestoreError] = useState("");
+    const [restoreAttempt, setRestoreAttempt] = useState(0);
 
     const clearAuthentication = useCallback(() => {
         localStorage.removeItem(TOKEN_STORAGE_KEY);
         setToken(null);
         setUser(null);
+        setAuthRestoreError("");
+        setIsLoading(false);
     }, []);
 
     const login = async (credentials) => {
@@ -45,6 +49,7 @@ export const AuthProvider = ({ children }) => {
 
         setToken(newToken);
         setUser(authenticatedUser);
+        setAuthRestoreError("");
 
         return authenticatedUser;
     };
@@ -68,6 +73,7 @@ export const AuthProvider = ({ children }) => {
 
         setToken(newToken);
         setUser(registeredUser);
+        setAuthRestoreError("");
 
         return registeredUser;
     };
@@ -76,16 +82,24 @@ export const AuthProvider = ({ children }) => {
         clearAuthentication();
     };
 
+    const retryAuthenticationRestore = () => {
+        setAuthRestoreError("");
+        setIsLoading(true);
+        setRestoreAttempt((attempt) => attempt + 1);
+    };
+
     useEffect(() => {
         let isMounted = true;
 
         const restoreAuthentication = async () => {
             if (!token) {
                 setUser(null);
+                setAuthRestoreError("");
                 setIsLoading(false);
                 return;
             }
 
+            setAuthRestoreError("");
             try {
                 const response = await apiRequest(
                     "/auth/me",
@@ -97,9 +111,19 @@ export const AuthProvider = ({ children }) => {
                 if (isMounted) {
                     setUser(response.data.user);
                 }
-            } catch {
+            } catch (error) {
                 if (isMounted) {
-                    clearAuthentication();
+                    if (error.status === 401) {
+                        clearAuthentication();
+                    } else {
+                        // Keep the saved token through network/API outages.
+                        // Only a definitive unauthorized response means it
+                        // is safe to discard the user's session.
+                        setUser(null);
+                        setAuthRestoreError(
+                            "FlowForge could not validate your saved session. Check that the API is running, then retry. Your saved login has been kept."
+                        );
+                    }
                 }
             } finally {
                 if (isMounted) {
@@ -113,13 +137,15 @@ export const AuthProvider = ({ children }) => {
         return () => {
             isMounted = false;
         };
-    }, [token, clearAuthentication]);
+    }, [token, clearAuthentication, restoreAttempt]);
 
     const value = {
         token,
         user,
         isAuthenticated: Boolean(token && user),
         isLoading,
+        authRestoreError,
+        retryAuthenticationRestore,
         login,
         register,
         logout

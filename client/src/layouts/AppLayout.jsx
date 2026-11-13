@@ -6,6 +6,7 @@ import {
 
 import { useAuth } from "../hooks/useAuth";
 import ThemeToggle from "../components/ThemeToggle";
+import useProjectInvitations from "../hooks/useProjectInvitations";
 
 const AppLayout = () => {
     const navigate = useNavigate();
@@ -14,6 +15,8 @@ const AppLayout = () => {
         user,
         logout
     } = useAuth();
+    const invitationsQuery = useProjectInvitations();
+    const pendingInvitationCount = invitationsQuery.data?.data?.invitations?.length || 0;
 
     const handleLogout = () => {
         logout();
@@ -64,6 +67,15 @@ const AppLayout = () => {
                         }
                     >
                         Projects
+                    </NavLink>
+
+                    <NavLink
+                        to="/app/invitations"
+                        title="Project requests"
+                        className={({ isActive }) => `app-nav-link ${isActive ? "active" : ""}`}
+                    >
+                        Project requests
+                        {pendingInvitationCount > 0 && <span className="app-nav-count">{pendingInvitationCount}</span>}
                     </NavLink>
                 </nav>
             </aside>

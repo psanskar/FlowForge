@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Project = require("./project.model");
 const User = require("../users/user.model");
 const Task = require("../tasks/task.model");
+const ProjectInvitation = require("./projectInvitation.model");
 const {
     getProjectForMember,
     assertProjectOwner,
@@ -77,9 +78,20 @@ const removeMemberFromProject = async (
                 );
             }
 
+            // Prevent a pending request from re-adding someone after their
+            // membership ends.
+            await ProjectInvitation.updateMany(
+                { project: projectId, invitee: memberId, status: "pending" },
+                { $set: { status: "cancelled", respondedAt: new Date() } },
+                session ? { session } : {}
+            );
+
+            // Preserve completed assignment history; only active work returns
+            // to the unassigned pool when someone leaves the project.
             let taskQuery = Task.find({
                 project: projectId,
-                assignee: memberId
+                assignee: memberId,
+                status: { $ne: "completed" }
             }).lean();
             if (session) {
                 taskQuery = taskQuery.session(session);
@@ -90,7 +102,8 @@ const removeMemberFromProject = async (
                 const updateResult = await Task.updateMany(
                     {
                         project: projectId,
-                        assignee: memberId
+                        assignee: memberId,
+                        status: { $ne: "completed" }
                     },
                     {
                         $set: { assignee: null },
@@ -127,7 +140,7 @@ const removeMemberFromProject = async (
     return unassignedTasks.count;
 };
 
-const addProjectMember = async ({ projectId, userId, email }) => {
+const createProjectInvitation = async ({ projectId, userId, email }) => {
     const normalizedEmail = email.trim().toLowerCase();
     const member = await User.findOne({ email: normalizedEmail })
         .select("_id name email")
@@ -141,7 +154,11 @@ const addProjectMember = async ({ projectId, userId, email }) => {
         );
     }
 
-    const updatedProject = await withProjectMutationLock(
+    if (member._id.toString() === userId.toString()) {
+        throw createError(409, "CANNOT_INVITE_SELF", "You already own this project");
+    }
+
+    return withProjectMutationLock(
         projectId,
         async ({ session }) => {
             const project = await getProjectForOwner(projectId, userId, session);
@@ -153,41 +170,98 @@ const addProjectMember = async ({ projectId, userId, email }) => {
                 );
             }
 
-            const query = Project.findOneAndUpdate(
-                {
-                    _id: projectId,
-                    owner: userId,
-                    "members.user": { $ne: member._id }
-                },
-                {
-                    $push: {
-                        members: { user: member._id }
-                    }
-                },
-                {
-                    returnDocument: "after",
-                    runValidators: true,
-                    ...(session ? { session } : {})
-                }
-            );
-            const result = await query;
-
-            if (!result) {
-                throw createError(
-                    409,
-                    "PROJECT_MEMBERSHIP_CHANGED",
-                    "Project membership changed. Please retry."
-                );
+            const existingInvitation = await ProjectInvitation.findOne({
+                project: projectId,
+                invitee: member._id,
+                status: "pending"
+            }).session(session || null);
+            if (existingInvitation) {
+                throw createError(409, "INVITATION_ALREADY_PENDING", "An invitation is already pending for this account");
             }
 
-            return result;
+            const [invitation] = await ProjectInvitation.create([{
+                project: projectId,
+                inviter: userId,
+                invitee: member._id,
+                status: "pending"
+            }], session ? { session } : {});
+            return { invitation, user: member, projectId };
         }
     );
+};
 
-    return {
-        user: member,
-        projectId: updatedProject._id
-    };
+const listIncomingInvitations = async (userId) => ProjectInvitation.find({
+    invitee: userId,
+    status: "pending"
+}).sort({ createdAt: -1 })
+    .populate("project", "_id name status")
+    .populate("inviter", "_id name email")
+    .lean();
+
+const listProjectInvitations = async ({ projectId, userId }) => {
+    await getProjectForOwner(projectId, userId);
+    return ProjectInvitation.find({ project: projectId, status: "pending" })
+        .sort({ createdAt: -1 })
+        .populate("invitee", "_id name email")
+        .lean();
+};
+
+const respondToInvitation = async ({ invitationId, userId, accept }) => {
+    const invitation = await ProjectInvitation.findOne({
+        _id: invitationId,
+        invitee: userId,
+        status: "pending"
+    }).lean();
+    if (!invitation) {
+        throw createError(404, "INVITATION_NOT_FOUND", "Pending project invitation not found");
+    }
+
+    return withProjectMutationLock(invitation.project, async ({ session }) => {
+        const currentInvitationQuery = ProjectInvitation.findOne({
+            _id: invitationId,
+            invitee: userId,
+            status: "pending"
+        });
+        const currentInvitation = await currentInvitationQuery.session(session || null);
+        if (!currentInvitation) {
+            throw createError(409, "INVITATION_ALREADY_RESOLVED", "This invitation has already been answered");
+        }
+
+        if (accept) {
+            const project = await Project.findById(invitation.project).select("_id members status").session(session || null);
+            if (!project || project.status === "archived") {
+                throw createError(409, "PROJECT_UNAVAILABLE", "This project is no longer accepting members");
+            }
+            if (!hasMember(project, userId)) {
+                await Project.updateOne(
+                    { _id: invitation.project, "members.user": { $ne: userId } },
+                    { $push: { members: { user: userId } } },
+                    session ? { session, runValidators: true } : { runValidators: true }
+                );
+            }
+        }
+
+        currentInvitation.status = accept ? "accepted" : "declined";
+        currentInvitation.respondedAt = new Date();
+        await currentInvitation.save(session ? { session } : {});
+
+        return { invitationId, projectId: invitation.project, status: currentInvitation.status };
+    });
+};
+
+const cancelProjectInvitation = async ({ projectId, invitationId, userId }) => {
+    return withProjectMutationLock(projectId, async ({ session }) => {
+        await getProjectForOwner(projectId, userId, session);
+        const result = await ProjectInvitation.updateOne(
+            { _id: invitationId, project: projectId, status: "pending" },
+            { $set: { status: "cancelled", respondedAt: new Date() } },
+            session ? { session } : {}
+        );
+        if (!result.modifiedCount) {
+            throw createError(404, "INVITATION_NOT_FOUND", "Pending project invitation not found");
+        }
+        return { invitationId, status: "cancelled" };
+    });
 };
 
 const removeProjectMember = async ({ projectId, userId, memberId }) => {
@@ -319,7 +393,11 @@ const transferProjectOwnership = async ({
 };
 
 module.exports = {
-    addProjectMember,
+    createProjectInvitation,
+    listIncomingInvitations,
+    listProjectInvitations,
+    respondToInvitation,
+    cancelProjectInvitation,
     removeProjectMember,
     leaveProject,
     transferProjectOwnership

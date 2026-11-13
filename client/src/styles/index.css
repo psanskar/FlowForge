@@ -504,6 +504,20 @@ button {
     font-size: 13px;
 }
 
+.empty-state-actions {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+@media (max-width: 480px) {
+    .empty-state-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+}
+
 @media (max-width: 760px) {
     .app-sidebar {
         width: 68px;
@@ -2771,6 +2785,111 @@ html[data-theme="dark"] .password-visibility-toggle:hover {
 
 .workspace-members-error { color: #a33e39; }
 .workspace-members-success { color: #176e64; }
+
+.workspace-pending-invitations {
+    display: grid;
+    gap: 7px;
+    padding-top: 12px;
+    border-top: 1px solid #e8edef;
+    font-size: 12px;
+}
+
+.workspace-pending-invitations > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #586771;
+}
+
+.app-nav-count {
+    display: inline-grid;
+    min-width: 18px;
+    height: 18px;
+    place-items: center;
+    margin-left: auto;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: #e6f3ef;
+    color: #176e64;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.invitations-page {
+    max-width: 980px;
+}
+
+.invitations-list {
+    display: grid;
+    gap: 12px;
+}
+
+.invitation-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 20px;
+    border: 1px solid #e2e8ed;
+    border-radius: 12px;
+    background: #fff;
+}
+
+.invitation-card-copy h2 {
+    margin: 4px 0;
+    color: #17212b;
+    font-size: 18px;
+}
+
+.invitation-card-copy p {
+    margin: 0;
+    color: #687583;
+    font-size: 13px;
+}
+
+.invitation-card-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+}
+
+.invitations-error { color: #a33e39; }
+.invitations-success { color: #176e64; }
+
+html[data-theme="dark"] .workspace-pending-invitations,
+html[data-theme="dark"] .workspace-pending-invitations > div {
+    border-color: #34424b;
+    color: #b7c4cb;
+}
+
+html[data-theme="dark"] .app-nav-count {
+    background: #263a3b;
+    color: #8cdec8;
+}
+
+html[data-theme="dark"] .invitation-card {
+    border-color: #2d3a44;
+    background: #1a242d;
+}
+
+html[data-theme="dark"] .invitation-card-copy h2 { color: #edf3f6; }
+html[data-theme="dark"] .invitation-card-copy p { color: #9cabb5; }
+
+@media (max-width: 620px) {
+    .invitation-card {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .invitation-card-actions {
+        width: 100%;
+    }
+
+    .invitation-card-actions > button {
+        flex: 1;
+    }
+}
 
 html[data-theme="dark"] .workspace-members-panel {
     border-color: #34424b;

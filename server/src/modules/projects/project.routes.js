@@ -16,6 +16,26 @@ const {
 
 const router = express.Router();
 
+router.get(
+    "/invitations",
+    requireAuth,
+    projectController.listIncomingInvitations
+);
+
+router.post(
+    "/invitations/:invitationId/accept",
+    requireAuth,
+    validateObjectId("invitationId"),
+    projectController.acceptProjectInvitation
+);
+
+router.post(
+    "/invitations/:invitationId/decline",
+    requireAuth,
+    validateObjectId("invitationId"),
+    projectController.declineProjectInvitation
+);
+
 router.post(
     "/",
     requireAuth,
@@ -37,6 +57,21 @@ router.get(
     projectController.getProject
 );
 
+router.get(
+    "/:projectId/invitations",
+    requireAuth,
+    validateObjectId("projectId"),
+    projectController.listProjectInvitations
+);
+
+router.delete(
+    "/:projectId/invitations/:invitationId",
+    requireAuth,
+    validateObjectId("projectId"),
+    validateObjectId("invitationId"),
+    projectController.cancelProjectInvitation
+);
+
 router.post(
     "/:projectId/archive",
     requireAuth,
@@ -56,7 +91,7 @@ router.post(
     requireAuth,
     validateObjectId("projectId"),
     validateAddProjectMember,
-    projectController.addProjectMember
+    projectController.createProjectInvitation
 );
 
 router.delete(
